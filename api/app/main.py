@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import auth, schools, users, students, fees, payments, portal, paynow
+from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications
 
 Base.metadata.create_all(bind=engine)
 
@@ -33,3 +33,5 @@ app.include_router(payments.router)
 app.include_router(payments.invoices_router)
 app.include_router(portal.router)
 app.include_router(paynow.router)
+app.include_router(results.router)
+app.include_router(notifications.router)

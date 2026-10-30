@@ -167,3 +167,49 @@ CREATE TABLE IF NOT EXISTS receipts (
     issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (school_id, receipt_number)
 );
+CREATE TABLE IF NOT EXISTS subjects (
+    id SERIAL PRIMARY KEY,
+    school_id INTEGER NOT NULL REFERENCES schools(id),
+    name VARCHAR(120) NOT NULL,
+    code VARCHAR(40),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS assessments (
+    id SERIAL PRIMARY KEY,
+    school_id INTEGER NOT NULL REFERENCES schools(id),
+    subject_id INTEGER NOT NULL REFERENCES subjects(id),
+    term_id INTEGER REFERENCES terms(id),
+    name VARCHAR(120) NOT NULL,
+    weight NUMERIC(5,2) NOT NULL DEFAULT 1,
+    max_score NUMERIC(6,2) NOT NULL DEFAULT 100,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS marks (
+    id SERIAL PRIMARY KEY,
+    school_id INTEGER NOT NULL REFERENCES schools(id),
+    student_id INTEGER NOT NULL REFERENCES students(id),
+    assessment_id INTEGER NOT NULL REFERENCES assessments(id),
+    score NUMERIC(6,2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    published_at TIMESTAMPTZ,
+    entered_by_user_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    school_id INTEGER REFERENCES schools(id),
+    dedupe_key VARCHAR(255) UNIQUE NOT NULL,
+    channel VARCHAR(40) NOT NULL,
+    recipient VARCHAR(255) NOT NULL,
+    payload JSONB,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
