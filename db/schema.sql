@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS schools (
     province VARCHAR(100),
     status VARCHAR(20) NOT NULL DEFAULT 'onboarding',
     plan VARCHAR(50) DEFAULT 'pilot',
+    paynow_integration_id VARCHAR(100),
+    paynow_integration_key VARCHAR(500),
+    paynow_test_mode BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

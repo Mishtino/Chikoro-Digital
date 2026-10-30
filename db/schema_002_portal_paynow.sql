@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS paynow_attempts (
     school_id INTEGER NOT NULL REFERENCES schools(id),
     student_id INTEGER,
     invoice_id INTEGER REFERENCES invoices(id),
+    reference VARCHAR(120),
     amount NUMERIC(12,2) NOT NULL,
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
     status VARCHAR(20) NOT NULL DEFAULT 'created', -- created, sent, paid, failed, cancelled

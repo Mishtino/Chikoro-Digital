@@ -20,7 +20,12 @@ class School(Base):
     province = Column(String(100), nullable=True)
     status = Column(String(20), nullable=False, default="onboarding")  # onboarding, live, suspended
     plan = Column(String(50), nullable=True, default="pilot")
+    paynow_integration_id = Column(String(100), nullable=True)
+    paynow_integration_key = Column(String(500), nullable=True)  # encrypted
+    paynow_test_mode = Column(Boolean, default=True, nullable=False)
+
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
     users = relationship("User", back_populates="school", foreign_keys="User.school_id")
+
