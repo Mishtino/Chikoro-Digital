@@ -7,8 +7,11 @@ export default function Dashboard() {
   const router = useRouter();
   const [schools, setSchools] = useState([]);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ code: '', name: '', province: '' });
-  const [creating, setCreating] = useState(false);
+  const [schoolForm, setSchoolForm] = useState({ code: '', name: '', province: '' });
+  const [creatingSchool, setCreatingSchool] = useState(false);
+  const [adminForm, setAdminForm] = useState({ school_id: '', email: '', full_name: '', password: '', role: 'owner' });
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [adminMsg, setAdminMsg] = useState('');
 
   async function load() {
     const token = localStorage.getItem('token');
@@ -18,6 +21,7 @@ export default function Dashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to load schools');
       setSchools(data);
+      if (!adminForm.school_id && data.length) setAdminForm((f) => ({ ...f, school_id: data[0].id }));
     } catch (e) { setError(e.message); }
   }
 
@@ -25,20 +29,38 @@ export default function Dashboard() {
 
   async function createSchool(e) {
     e.preventDefault();
-    setCreating(true); setError('');
+    setCreatingSchool(true); setError('');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API}/schools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form),
+        body: JSON.stringify(schoolForm),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Create failed');
-      setForm({ code: '', name: '', province: '' });
+      setSchoolForm({ code: '', name: '', province: '' });
       await load();
     } catch (e) { setError(e.message); }
-    finally { setCreating(false); }
+    finally { setCreatingSchool(false); }
+  }
+
+  async function createAdmin(e) {
+    e.preventDefault();
+    setCreatingAdmin(true); setError(''); setAdminMsg('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...adminForm, school_id: Number(adminForm.school_id) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Create admin failed');
+      setAdminMsg(`Created ${data.email} (${data.role})`);
+      setAdminForm((f) => ({ ...f, email: '', full_name: '', password: '' }));
+    } catch (e) { setError(e.message); }
+    finally { setCreatingAdmin(false); }
   }
 
   return (
@@ -46,12 +68,33 @@ export default function Dashboard() {
       <div className="card">
         <h1>VortexTechPortal — Schools</h1>
         {error && <p style={{ color: 'red' }}>{error}</p>}
+        <h2>Create school</h2>
         <form onSubmit={createSchool} style={{ display: 'grid', gap: '.5rem', marginBottom: '1.5rem' }}>
-          <input placeholder="School code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-          <input placeholder="School name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input placeholder="Province" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
-          <button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create school'}</button>
+          <input placeholder="School code" value={schoolForm.code} onChange={(e) => setSchoolForm({ ...schoolForm, code: e.target.value })} />
+          <input placeholder="School name" value={schoolForm.name} onChange={(e) => setSchoolForm({ ...schoolForm, name: e.target.value })} />
+          <input placeholder="Province" value={schoolForm.province} onChange={(e) => setSchoolForm({ ...schoolForm, province: e.target.value })} />
+          <button type="submit" disabled={creatingSchool}>{creatingSchool ? 'Creating...' : 'Create school'}</button>
         </form>
+
+        <h2>Create school admin</h2>
+        {adminMsg && <p style={{ color: 'green' }}>{adminMsg}</p>}
+        <form onSubmit={createAdmin} style={{ display: 'grid', gap: '.5rem', marginBottom: '1.5rem' }}>
+          <select value={adminForm.school_id} onChange={(e) => setAdminForm({ ...adminForm, school_id: e.target.value })}>
+            {schools.map((s) => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
+          </select>
+          <input placeholder="Admin full name" value={adminForm.full_name} onChange={(e) => setAdminForm({ ...adminForm, full_name: e.target.value })} />
+          <input type="email" placeholder="Admin email" value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} />
+          <input type="password" placeholder="Admin password" value={adminForm.password} onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })} />
+          <select value={adminForm.role} onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}>
+            <option value="owner">Owner</option>
+            <option value="bursar">Bursar</option>
+            <option value="headmaster">Headmaster</option>
+            <option value="teacher">Teacher</option>
+          </select>
+          <button type="submit" disabled={creatingAdmin}>{creatingAdmin ? 'Creating...' : 'Create admin'}</button>
+        </form>
+
+        <h2>Schools</h2>
         <table>
           <thead><tr><th>Code</th><th>Name</th><th>Province</th><th>Status</th><th>Plan</th></tr></thead>
           <tbody>
