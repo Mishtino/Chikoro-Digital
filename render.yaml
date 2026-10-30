@@ -7,6 +7,9 @@ services:
     envVars:
       - key: APP_NAME
         value: Chikoro Digital API
+      - key: PYTHON_VERSION
+        value: "3.14.8"
+
       - key: ENV
         value: production
       - key: DEBUG
@@ -45,6 +48,10 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python worker/worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.14.8"
+
 
 databases:
   - name: chikoro-db
