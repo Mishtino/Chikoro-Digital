@@ -33,7 +33,7 @@ export default function PortalRegister() {
           <input placeholder="School code" value={form.school_code} onChange={(e) => set('school_code', e.target.value)} />
           <input placeholder="Student ID (from slip)" value={form.student_number} onChange={(e) => set('student_number', e.target.value)} />
           <input placeholder="One-time PIN (from slip)" value={form.pin} onChange={(e) => set('pin', e.target.value)} />
-          <input type="email" placeholder="Email" value={form.email} onChange={(e) => set('email', e.target.value)} />
+          <input type="email" placeholder="Email (optional)" value={form.email} onChange={(e) => set('email', e.target.value)} />
           <input type="password" placeholder="Password" value={form.password} onChange={(e) => set('password', e.target.value)} />
           <input placeholder="Phone (optional)" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           <button type="submit">Activate</button>

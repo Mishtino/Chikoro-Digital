@@ -31,7 +31,7 @@ export default function PortalLogin() {
         <h1>Student / Parent Login</h1>
         {error && <div className="error">{error}</div>}
         <form onSubmit={submit}>
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input placeholder="Student ID or Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button type="submit">Log in</button>
         </form>

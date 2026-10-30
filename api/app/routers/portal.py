@@ -22,8 +22,8 @@ class PortalRegisterRequest(BaseModel):
     school_code: str
     student_number: str
     pin: str
-    email: str
     password: str
+    email: Optional[str] = None
     phone: Optional[str] = None
 
 
@@ -52,11 +52,12 @@ def portal_register(payload: PortalRegisterRequest, db: Session = Depends(get_db
     if not verify_pin(payload.pin, student.activation_pin_hash):
         raise HTTPException(status_code=400, detail="Invalid PIN")
     # unique email
+    email = payload.email or f"{student.student_number}@students.chikoro"
     from app.models.user import User
-    if db.query(User).filter(User.email == payload.email).first():
+    if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     user = User(
-        email=payload.email,
+        email=email,
         full_name=f"{student.first_name} {student.last_name}",
         password_hash=hash_password(payload.password),
         role="student",

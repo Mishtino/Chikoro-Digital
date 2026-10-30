@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 export default function AdminLogin() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('vortextech.co.zw');
+  const [password, setPassword] = useState('Rhoda2003@ig');
   const [error, setError] = useState('');
   async function submit(e) {
     e.preventDefault();

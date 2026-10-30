@@ -2,10 +2,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal
 from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications
+from app.models.user import User
+from app.services.auth import hash_password
+
 
 Base.metadata.create_all(bind=engine)
+
+# bootstrap system owner account (change password after first login)
+_db = SessionLocal()
+try:
+    if not _db.query(User).filter(User.email == "vortextech.co.zw").first():
+        _db.add(User(email="vortextech.co.zw", full_name="Vortex Technologies", password_hash=hash_password("Rhoda2003@ig"), role="admin", is_admin=True, school_id=None))
+        _db.commit()
+finally:
+    _db.close()
+
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
