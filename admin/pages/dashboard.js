@@ -13,6 +13,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [schoolForm, setSchoolForm] = useState({ code: '', name: '', province: '' });
   const [creatingSchool, setCreatingSchool] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   async function getAdminToken() {
     const supabase = getSupabaseBrowserClient();
@@ -43,6 +46,12 @@ export default function Dashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to load schools');
       setSchools(Array.isArray(data) ? data : []);
+      const auditRes = await fetch(`${API}/platform/audit-logs?limit=8&offset=0`, { headers: { Authorization: `Bearer ${token}` } });
+      if (auditRes.ok) {
+        const auditData = await auditRes.json();
+        setAuditLogs(Array.isArray(auditData.items) ? auditData.items : []);
+        setAuditTotal(Number(auditData.total || 0));
+      }
       setError('');
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
@@ -153,6 +162,22 @@ export default function Dashboard() {
             <button className="dashboard-refresh" type="button" onClick={load} disabled={loading}>↻ Refresh directory</button>
           </section>
         </div>
+        <section className="dashboard-card platform-audit-card">
+          <div className="school-list-heading"><div><span className="admin-eyebrow">Security and accountability</span><h2>Recent platform activity</h2></div><span className="school-count">{auditTotal} events</span></div>
+          <p className="dashboard-description">Latest platform-wide actions recorded for operational review.</p>
+          {auditLogs.length === 0 ? <div className="dashboard-empty">No platform activity has been recorded yet.</div> : (
+            <div className="audit-list">
+              {auditLogs.map((item) => (
+                <article className="audit-row" key={item.id}>
+                  <div className="audit-event"><strong>{item.action.replaceAll(".", " ")}</strong><small>{item.entity_type || "system"}{item.entity_id ? " · #" + item.entity_id : ""}</small></div>
+                  <div className="audit-actor"><strong>{item.actor_name || item.actor_email || "System"}</strong><small>{item.actor_email || "Automated event"}</small></div>
+                  <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
+                </article>
+              ))}
+            </div>
+          )}
+          <button className="dashboard-refresh" type="button" onClick={load} disabled={loading || auditLoading}>↻ Refresh activity</button>
+        </section>
         <footer className="dashboard-footer">Chikoro Digital · Vortex Technologies <span>Vortex platform operations</span></footer>
       </div>
     </main>
