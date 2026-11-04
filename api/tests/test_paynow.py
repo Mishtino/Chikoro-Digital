@@ -394,3 +394,65 @@ def test_initiation_rejects_untrusted_provider_checkout_url(
     assert attempt.status == "failed"
     assert attempt.browser_url is None
     assert attempt.poll_url is None
+
+
+def test_parent_cannot_pay_another_learners_invoice_within_same_school(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN008", name="Parent Invoice Ownership School",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    linked_learner = Student(
+        school_id=school.id, student_number="PN-P2", first_name="Linked",
+        last_name="Learner", status="active",
+    )
+    other_learner = Student(
+        school_id=school.id, student_number="PN-P3", first_name="Other",
+        last_name="Learner", status="active",
+    )
+    db_session.add_all([linked_learner, other_learner])
+    db_session.flush()
+    other_invoice = Invoice(
+        school_id=school.id, student_id=other_learner.id,
+        invoice_number="PN-OTHER-INV", currency="USD", total=50,
+        status="issued",
+    )
+    db_session.add(other_invoice)
+    db_session.commit()
+
+    parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9005, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+
+    class VerifiedLinkResult:
+        @staticmethod
+        def first():
+            return (1,)
+
+    original_execute = db_session.execute
+
+    def execute_with_verified_link(statement, *args, **kwargs):
+        if "guardian_links" in str(statement):
+            return VerifiedLinkResult()
+        return original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", execute_with_verified_link)
+
+    response = client.post(
+        "/paynow/initiate",
+        json={
+            "student_id": linked_learner.id,
+            "invoice_ids": [other_invoice.id],
+            "amount": 10,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invoice does not belong to the selected student"
+    assert db_session.query(PaynowAttempt).count() == 0
