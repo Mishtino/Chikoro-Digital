@@ -298,7 +298,7 @@ def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal 
 def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     if not principal.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
-    pending = db.query(PaynowAttempt).filter(PaynowAttempt.status == "sent").with_for_update(skip_locked=True).all()
+    pending = db.query(PaynowAttempt).filter(PaynowAttempt.status.in_(("sent", "unverified"))).with_for_update(skip_locked=True).all()
     updated = 0
     for att in pending:
         school = db.get(School, att.school_id)
