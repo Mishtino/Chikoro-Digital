@@ -109,6 +109,9 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
             raise HTTPException(status_code=422, detail="Invoice does not belong to the selected student")
         payload.student_id = selected_invoice.student_id
 
+    if payload.student_id is None:
+        raise HTTPException(status_code=422, detail="A student or invoice must be selected for checkout")
+
     # determine amount
     if payload.amount is not None:
         amount = payload.amount
@@ -116,6 +119,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
             raise HTTPException(status_code=422, detail="Payment amount must be positive")
         if payload.invoice_ids and amount > float(invoice_balance(db, selected_invoice)):
             raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
+        if not payload.invoice_ids and payload.student_id and amount > float(student_balance(db, sid, payload.student_id)):
+            raise HTTPException(status_code=422, detail="Payment amount exceeds the student balance")
     elif payload.invoice_ids:
         invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
         amount = sum(float(invoice_balance(db, inv)) for inv in invoices)
@@ -194,8 +199,6 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
     if school is None or not school.paynow_integration_key:
         return {"status": "school not configured"}
     integration_key = decrypt(school.paynow_integration_key)
-
-    ping_verified = verify_hash(data, integration_key)
 
     polled = {}
     if attempt.poll_url:
