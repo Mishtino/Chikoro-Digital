@@ -16,7 +16,7 @@ from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 from app.models.paynow import PaynowAttempt
 from app.services.crypto import encrypt, decrypt
 from app.services.paynow import initiate_transaction, poll_transaction, verify_hash, _validate_poll_url, _validate_browser_url
-from app.services.money import invoice_balance
+from app.services.money import invoice_balance, next_receipt_number
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/paynow", tags=["paynow"])
@@ -132,13 +132,10 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
         from app.services.money import allocate_payment
         allocate_payment(db, payment, None)
 
-    receipt_count = db.query(Receipt).filter(
-        Receipt.school_id == attempt.school_id
-    ).count()
     db.add(Receipt(
         school_id=attempt.school_id,
         payment_id=payment.id,
-        receipt_number=f"RCP-{receipt_count + 1:05d}",
+        receipt_number=next_receipt_number(db, attempt.school_id),
     ))
     return True
 
