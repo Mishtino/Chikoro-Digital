@@ -45,6 +45,19 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     student = db.get(Student, payload.student_id)
     if student is None or student.school_id != sid:
         raise HTTPException(status_code=404, detail="Student not found")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=422, detail="Payment amount must be positive")
+    if payload.invoice_ids:
+        requested_ids = set(payload.invoice_ids)
+        if len(requested_ids) != len(payload.invoice_ids):
+            raise HTTPException(status_code=422, detail="Duplicate invoice IDs are not allowed")
+        matched = db.query(Invoice).filter(
+            Invoice.id.in_(requested_ids),
+            Invoice.school_id == sid,
+            Invoice.student_id == payload.student_id,
+        ).count()
+        if matched != len(requested_ids):
+            raise HTTPException(status_code=404, detail="One or more invoices do not belong to this student and school")
     payment = Payment(
         school_id=sid,
         student_id=payload.student_id,
@@ -94,7 +107,7 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 
 @router.post("/{payment_id}/void")
-def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
+def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     payment = db.get(Payment, payment_id)
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
