@@ -58,6 +58,7 @@ def test_platform_access_endpoint_returns_server_permissions(client, seed_two_sc
     assert response.json()["is_platform_staff"] is True
     assert response.json()["is_platform_admin"] is False
     assert response.json()["permissions"] == ["platform:access:read", "schools:read"]
+    assert "platform:staff:write" not in response.json()["permissions"]
 
 
 def test_school_user_is_not_platform_staff(client, seed_two_schools):
@@ -101,3 +102,18 @@ def test_vortex_admin_has_platform_staff_write_permission(client, seed_two_schoo
 
     assert response.status_code == 200
     assert "platform:staff:write" in response.json()["permissions"]
+
+
+def test_billing_role_is_not_yet_invitable(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(
+        admin, "vortex_admin", is_admin=True
+    )
+
+    response = client.post("/platform/staff/invitations", json={
+        "email": "billing@example.com",
+        "full_name": "Billing Officer",
+        "role": "vortex_billing",
+    })
+
+    assert response.status_code == 422
