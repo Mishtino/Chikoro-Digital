@@ -56,22 +56,23 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
             Invoice.id.in_(requested_ids),
             Invoice.school_id == sid,
             Invoice.student_id == payload.student_id,
+            Invoice.currency == payload.currency.upper(),
             Invoice.status != "void",
         ).count()
         if matched != len(requested_ids):
             raise HTTPException(status_code=404, detail="One or more invoices do not belong to this student and school")
-        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id, Invoice.status != "void").all()), to_decimal(0))
+        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id, Invoice.currency == payload.currency.upper(), Invoice.status != "void").all()), to_decimal(0))
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
     else:
-        outstanding = student_balance(db, sid, payload.student_id)
+        outstanding = student_balance(db, sid, payload.student_id, payload.currency.upper())
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
     payment = Payment(
         school_id=sid,
         student_id=payload.student_id,
         amount=payload.amount,
-        currency=payload.currency,
+        currency=payload.currency.upper(),
         method=payload.method,
         reference=payload.reference,
         received_by_user_id=principal.user_id,
