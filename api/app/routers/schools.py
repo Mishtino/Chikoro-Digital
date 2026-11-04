@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal, require_admin
+from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 from app.models.school import School
 from app.services.audit import write_audit
 
@@ -32,7 +32,9 @@ class SchoolOut(BaseModel):
 
 
 @router.post("", response_model=SchoolOut, status_code=status.HTTP_201_CREATED)
-def create_school(payload: SchoolCreate, admin: Principal = Depends(require_admin), db: Session = Depends(get_db)):
+def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if not admin.is_admin:
+        raise HTTPException(status_code=403, detail="Platform administrator access required")
     existing = db.query(School).filter(School.code == payload.code).first()
     if existing:
         raise HTTPException(status_code=400, detail="School code already exists")
@@ -45,12 +47,14 @@ def create_school(payload: SchoolCreate, admin: Principal = Depends(require_admi
 
 
 @router.get("", response_model=List[SchoolOut])
-def list_schools(admin: Principal = Depends(require_admin), db: Session = Depends(get_db)):
+def list_schools(admin: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if not admin.is_admin:
+        raise HTTPException(status_code=403, detail="Platform administrator access required")
     return db.query(School).order_by(School.id).all()
 
 
 @router.get("/{school_id}", response_model=SchoolOut)
-def get_school(school_id: int, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def get_school(school_id: int, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     school = db.get(School, school_id)
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
