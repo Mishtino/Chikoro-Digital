@@ -17,6 +17,10 @@ from app.services.supabase_auth import verify_supabase_access_token
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class ParentActivationRequest(BaseModel):
+    pin: str
+
+
 @router.post("/bootstrap-admin")
 def bootstrap_first_admin(
     setup_token: str = Header(default="", alias="X-Chikoro-Bootstrap-Token"),
@@ -75,7 +79,7 @@ def bootstrap_first_admin(
 
 @router.post("/parent/activate")
 def activate_parent_account(
-    pin: str,
+    payload: ParentActivationRequest,
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: Session = Depends(get_db),
 ):
@@ -102,7 +106,7 @@ def activate_parent_account(
           AND c.guardian_activated_at IS NULL
           AND s.status = 'active'
     """), {"email": auth_user["email"]}).mappings().all()
-    matches = [row for row in contacts if verify_pin(pin, row["guardian_activation_pin_hash"])]
+    matches = [row for row in contacts if verify_pin(payload.pin, row["guardian_activation_pin_hash"])]
     if len(matches) != 1:
         raise HTTPException(status_code=403, detail="Activation PIN is invalid, expired, or not uniquely assigned")
     contact = matches[0]
