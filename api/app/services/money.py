@@ -13,7 +13,10 @@ def invoice_paid_amount(db: Session, invoice_id: int, currency: str, school_id: 
     total = (
         db.query(func.coalesce(func.sum(PaymentAllocation.amount), 0))
         .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .join(Invoice, Invoice.id == PaymentAllocation.invoice_id)
         .filter(PaymentAllocation.invoice_id == invoice_id)
+        .filter(Invoice.school_id == school_id)
+        .filter(Invoice.student_id == Payment.student_id)
         .filter(PaymentAllocation.school_id == school_id)
         .filter(Payment.school_id == school_id)
         .filter(Payment.voided.is_(False))
