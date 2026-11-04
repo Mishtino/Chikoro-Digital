@@ -92,3 +92,48 @@ def test_manual_receipts_are_sequential_within_school(client, db_session):
         receipt_numbers.append(response.json()["receipt_number"])
 
     assert receipt_numbers == ["RCP-00001", "RCP-00002"]
+
+
+def test_manual_receipt_numbering_does_not_reuse_existing_gap(client, db_session):
+    school = School(code="PAY003", name="Receipt Gap School")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-STU-3",
+        first_name="Gap", last_name="Student", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-INV-GAP", currency="USD", total=50,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    old_payments = [
+        Payment(
+            school_id=school.id, student_id=student.id,
+            amount=1, currency="USD", method="cash",
+        )
+        for _ in range(2)
+    ]
+    db_session.add_all(old_payments)
+    db_session.flush()
+    db_session.add_all([
+        Receipt(school_id=school.id, payment_id=old_payments[0].id,
+                receipt_number="RCP-00001"),
+        Receipt(school_id=school.id, payment_id=old_payments[1].id,
+                receipt_number="RCP-00003"),
+    ])
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+    response = client.post(
+        "/payments",
+        json={"student_id": student.id, "amount": 10, "currency": "USD",
+              "method": "cash", "invoice_ids": [invoice.id]},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["receipt_number"] == "RCP-00004"
