@@ -8,3 +8,13 @@
 
 .school-actions{white-space:nowrap}.school-actions button{margin:2px 5px 2px 0;padding:6px 9px;border:1px solid #d7deea;border-radius:7px;background:#fff;color:#34445f;font-size:11px;font-weight:700;cursor:pointer}.school-actions button:hover{background:#f1f5fb}.school-actions button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:760px){.school-actions{white-space:normal}.school-actions button{margin:3px}}
+
+
+.platform-audit-card { margin-top: 22px; }
+.audit-list { display: grid; gap: 0; }
+.audit-row { display: grid; grid-template-columns: 1.2fr 1fr auto; gap: 18px; align-items: center; padding: 14px 0; border-top: 1px solid #e9edf2; }
+.audit-event, .audit-actor { display: grid; gap: 4px; min-width: 0; }
+.audit-event strong { text-transform: capitalize; }
+.audit-row small, .audit-row time { color: #718096; font-size: 12px; }
+.audit-row time { white-space: nowrap; }
+@media (max-width: 700px) { .audit-row { grid-template-columns: 1fr; gap: 7px; } .audit-row time { white-space: normal; } }
