@@ -56,10 +56,11 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
             Invoice.id.in_(requested_ids),
             Invoice.school_id == sid,
             Invoice.student_id == payload.student_id,
+            Invoice.status != "void",
         ).count()
         if matched != len(requested_ids):
             raise HTTPException(status_code=404, detail="One or more invoices do not belong to this student and school")
-        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id).all()), to_decimal(0))
+        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id, Invoice.status != "void").all()), to_decimal(0))
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
     else:
