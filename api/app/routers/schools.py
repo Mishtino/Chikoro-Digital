@@ -9,6 +9,7 @@ from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 from app.models.school import School
 from app.services.audit import write_audit
+from app.services.platform_access import require_platform_permission
 
 router = APIRouter(prefix="/schools", tags=["schools"])
 
@@ -88,9 +89,7 @@ def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_
 
 
 @router.get("", response_model=List[SchoolOut])
-def list_schools(admin: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if not admin.is_platform_admin:
-        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
+def list_schools(admin: SupabasePrincipal = Depends(require_platform_permission("schools:read")), db: Session = Depends(get_db)):
     return db.query(School).order_by(School.id).all()
 
 
@@ -99,7 +98,7 @@ def get_school(school_id: int, principal: SupabasePrincipal = Depends(get_supaba
     school = db.get(School, school_id)
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
-    if not principal.is_platform_admin and principal.school_id != school_id:
+    if not principal.is_platform_staff and principal.school_id != school_id:
         raise HTTPException(status_code=403, detail="Access denied")
     return school
 
