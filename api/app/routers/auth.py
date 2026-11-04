@@ -49,15 +49,19 @@ def bootstrap_first_admin(
     if profile_count:
         raise HTTPException(status_code=409, detail="Bootstrap is closed because a profile already exists")
 
+    owner_email = (settings.platform_owner_email or "").strip().lower()
+    if not owner_email:
+        raise HTTPException(status_code=503, detail="VORTEX_PLATFORM_OWNER_EMAIL must be configured before bootstrap")
     admins = db.execute(text("""
         SELECT id, email, role, school_id, is_active, is_admin
         FROM public.users
         WHERE is_admin = true AND role = 'admin' AND is_active = true AND school_id IS NULL
+          AND lower(email) = :owner_email
         ORDER BY id
         LIMIT 2
-    """)).mappings().all()
+    """), {"owner_email": owner_email}).mappings().all()
     if len(admins) != 1 or not admins[0]["email"]:
-        raise HTTPException(status_code=409, detail="A single active platform administrator with an email is required")
+        raise HTTPException(status_code=409, detail="The configured Vortex platform owner must match exactly one active platform account")
     admin = admins[0]
 
     auth_user = db.execute(text("""
@@ -74,7 +78,7 @@ def bootstrap_first_admin(
         INSERT INTO public.profiles
             (id, local_user_id, role, school_id, is_active, created_at, updated_at)
         VALUES
-            (CAST(:auth_id AS uuid), :local_user_id, 'admin', NULL, true, now(), now())
+            (CAST(:auth_id AS uuid), :local_user_id, 'vortex_admin', NULL, true, now(), now())
         ON CONFLICT DO NOTHING
     """), {"auth_id": str(auth_user[0][0]), "local_user_id": admin["id"]})
     if result.rowcount != 1:
@@ -321,4 +325,5 @@ def supabase_me(principal: SupabasePrincipal = Depends(get_supabase_principal)):
         "school_id": principal.school_id,
         "role": principal.role,
         "is_admin": principal.is_admin,
+        "is_platform_admin": principal.is_platform_admin,
     }
