@@ -43,6 +43,7 @@ class StudentOut(BaseModel):
 
 class StudentCreateResult(StudentOut):
     pin: str
+    guardian_contact_id: Optional[int] = None
 
 
 def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
@@ -77,6 +78,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
     db.add(student)
     db.commit()
     db.refresh(student)
+    guardian_contact_id = None
     if payload.guardian_name or payload.guardian_phone or payload.guardian_email:
         contact = Contact(
             school_id=sid,
@@ -88,6 +90,8 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         )
         db.add(contact)
         db.commit()
+        db.refresh(contact)
+        guardian_contact_id = contact.id
     write_audit(db, principal, "student.create", "student", student.id, {"number": number}, school_id=sid)
     result = StudentCreateResult(
         id=student.id,
@@ -99,6 +103,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         status=student.status,
         activated=bool(student.activated_at),
         pin=pin,
+        guardian_contact_id=guardian_contact_id,
     )
     return result
 
