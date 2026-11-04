@@ -68,7 +68,7 @@ jobs:
           cache: npm
           cache-dependency-path: admin/package-lock.json
       - name: Install admin dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Build admin portal
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
