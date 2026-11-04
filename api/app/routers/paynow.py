@@ -9,7 +9,8 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_principal, Principal
 from app.models.school import School
-from app.models.student import Student
+from app.models.student import Student, Contact
+from app.models.guardian_link import GuardianLink
 from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 from app.models.paynow import PaynowAttempt
 from app.services.crypto import encrypt, decrypt
@@ -85,15 +86,43 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: Principal = Depe
         if student is None:
             raise HTTPException(status_code=404, detail="Student not found")
         sid = student.school_id
-        if principal.role in ("student", "parent"):
+        if principal.role == "student":
             if student.portal_user_id != principal.user_id:
                 raise HTTPException(status_code=403, detail="Access denied")
+        elif principal.role == "parent":
+            linked = db.query(GuardianLink.id).join(
+                Contact, Contact.id == GuardianLink.contact_id
+            ).filter(
+                GuardianLink.profile_id == principal.auth_user_id,
+                GuardianLink.school_id == sid,
+                GuardianLink.is_active.is_(True),
+                Contact.student_id == student.id,
+            ).first()
+            if linked is None:
+                raise HTTPException(status_code=403, detail="This learner is not linked to your verified guardian account")
         elif not principal.is_admin and principal.school_id != sid:
             raise HTTPException(status_code=403, detail="Access denied")
-    elif principal.role in ("student", "parent"):
+    elif principal.role == "student":
         student = db.query(Student).filter(Student.portal_user_id == principal.user_id).first()
         if student is None:
             raise HTTPException(status_code=404, detail="No student linked")
+        payload.student_id = student.id
+        sid = student.school_id
+    elif principal.role == "parent":
+        linked_rows = db.query(Student).join(
+            Contact, Contact.student_id == Student.id
+        ).join(
+            GuardianLink, GuardianLink.contact_id == Contact.id
+        ).filter(
+            GuardianLink.profile_id == principal.auth_user_id,
+            GuardianLink.is_active.is_(True),
+            GuardianLink.school_id == principal.school_id,
+        ).all()
+        if not linked_rows:
+            raise HTTPException(status_code=404, detail="No learner linked to this guardian account")
+        if len(linked_rows) > 1:
+            raise HTTPException(status_code=400, detail="Select the learner whose fees you want to pay")
+        student = linked_rows[0]
         payload.student_id = student.id
         sid = student.school_id
     else:
