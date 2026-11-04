@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.school import School
 from app.models.student import Student
 from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
@@ -36,7 +36,7 @@ class PaynowInitiateRequest(BaseModel):
     result_url: Optional[str] = None
 
 
-def _sid(principal: Principal, requested: Optional[int]) -> int:
+def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
@@ -47,7 +47,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.post("/settings")
-def update_settings(payload: PaynowSettingsUpdate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def update_settings(payload: PaynowSettingsUpdate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     if not principal.is_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -63,7 +63,7 @@ def update_settings(payload: PaynowSettingsUpdate, principal: Principal = Depend
 
 
 @router.get("/settings")
-def get_settings(school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def get_settings(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
     school = db.get(School, sid)
     if school is None:
@@ -76,7 +76,7 @@ def get_settings(school_id: Optional[int] = None, principal: Principal = Depends
 
 
 @router.post("/initiate")
-def initiate_payment(payload: PaynowInitiateRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     # determine school
     if payload.student_id:
         student = db.get(Student, payload.student_id)
@@ -228,7 +228,7 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 @router.get("/attempts")
-def list_attempts(school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -249,7 +249,7 @@ def list_attempts(school_id: Optional[int] = None, principal: Principal = Depend
 
 
 @router.post("/reconcile")
-def reconcile(principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     if not principal.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
     pending = db.query(PaynowAttempt).filter(PaynowAttempt.status == "sent").all()
