@@ -10,7 +10,7 @@ def test_school_creation_normalizes_code_and_text(client, seed_two_schools):
         auth_user_id=uuid4(),
         user_id=admin.id,
         school_id=None,
-        role="admin",
+        role="vortex_admin",
         is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
@@ -35,7 +35,7 @@ def test_school_creation_rejects_invalid_code(client, seed_two_schools):
         auth_user_id=uuid4(),
         user_id=admin.id,
         school_id=None,
-        role="admin",
+        role="vortex_admin",
         is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
@@ -73,7 +73,7 @@ def test_school_creation_rejects_blank_name(client, seed_two_schools):
         auth_user_id=uuid4(),
         user_id=admin.id,
         school_id=None,
-        role="admin",
+        role="vortex_admin",
         is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
