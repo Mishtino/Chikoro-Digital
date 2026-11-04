@@ -22,8 +22,13 @@ class SupabasePrincipal:
     is_admin: bool
 
     @property
+    def is_platform_staff(self) -> bool:
+        """True only for an explicitly assigned, tenant-free Vortex platform role."""
+        return self.school_id is None and self.role in {"vortex_admin", "vortex_support", "vortex_auditor", "vortex_billing"} and (self.role != "vortex_admin" or self.is_admin)
+
+    @property
     def is_platform_admin(self) -> bool:
-        """Only the separately provisioned Vortex platform role has global access."""
+        """Only the separately provisioned Vortex platform owner has write access."""
         return self.is_admin and self.role == "vortex_admin" and self.school_id is None
 
 
