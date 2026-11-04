@@ -89,3 +89,15 @@ def test_platform_support_can_read_individual_school_record(client, seed_two_sch
     response = client.get(f"/schools/{seed_two_schools['s1'].id}")
 
     assert response.status_code == 200
+
+
+def test_vortex_admin_has_platform_staff_write_permission(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(
+        admin, "vortex_admin", is_admin=True
+    )
+
+    response = client.get("/platform/access/me")
+
+    assert response.status_code == 200
+    assert "platform:staff:write" in response.json()["permissions"]
