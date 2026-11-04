@@ -1,8 +1,6 @@
-from typing import Optional
 import hmac
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.database import get_db
