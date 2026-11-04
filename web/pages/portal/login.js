@@ -20,7 +20,11 @@ export default function PortalLogin() {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const profile = await response.json();
-      if (!response.ok) { await supabase.auth.signOut(); throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.'); }
+      if (!response.ok) {
+        if (response.status === 403 && profile.detail === 'Account is not activated for Chikoro Digital') { router.push('/portal/activate'); return; }
+        await supabase.auth.signOut();
+        throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.');
+      }
       if (profile.role === 'parent') { router.push('/portal/parent'); return; }
       if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have student portal access.'); }
       router.push('/portal/fees');
