@@ -16,7 +16,7 @@ from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 from app.models.paynow import PaynowAttempt
 from app.services.crypto import encrypt, decrypt
 from app.services.paynow import initiate_transaction, poll_transaction, verify_hash, _validate_poll_url, _validate_browser_url
-from app.services.money import invoice_balance, next_receipt_number
+from app.services.money import invoice_balance, is_valid_payment_amount, next_receipt_number, to_decimal
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/paynow", tags=["paynow"])
@@ -260,8 +260,12 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     else:
         raise HTTPException(status_code=400, detail="amount or student_id or invoice_ids required")
 
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Nothing to pay")
+    if not is_valid_payment_amount(amount):
+        raise HTTPException(
+            status_code=422,
+            detail="Payment amount must be positive and have no more than two decimal places",
+        )
+    amount = to_decimal(amount)
 
     integration_key = decrypt(school.paynow_integration_key)
     reference = f"PN-{uuid.uuid4().hex[:12].upper()}"
