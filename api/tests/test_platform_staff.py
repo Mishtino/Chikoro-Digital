@@ -32,6 +32,7 @@ def _install_sqlite_profiles(db_session, monkeypatch):
         )
     """))
     import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     original_text = staff_router.text
 
     def sqlite_text(query):
@@ -117,6 +118,8 @@ def test_invitation_cannot_create_another_platform_admin(client, seed_two_school
 
 
 def test_invitation_requires_server_secret(client, seed_two_schools, monkeypatch):
+    import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     monkeypatch.setattr(settings, "supabase_secret_key", "")
     owner = seed_two_schools["admin"]
     app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
@@ -129,6 +132,8 @@ def test_invitation_requires_server_secret(client, seed_two_schools, monkeypatch
 
 
 def test_duplicate_local_email_is_rejected_before_auth_invite(client, seed_two_schools, monkeypatch):
+    import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
     owner = seed_two_schools["admin"]
     app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
@@ -145,6 +150,7 @@ def test_failed_profile_link_triggers_auth_user_compensation(
 ):
     monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
     import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     auth_id = str(uuid4())
     deleted = []
