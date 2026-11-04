@@ -48,7 +48,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         raise HTTPException(status_code=404, detail="Student not found")
     if not math.isfinite(payload.amount) or payload.amount <= 0:
         raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
-    currency = currency
+    currency = payload.currency.upper()
     if len(currency) != 3 or not currency.isalpha():
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
     if payload.invoice_ids:
@@ -59,7 +59,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
             Invoice.id.in_(requested_ids),
             Invoice.school_id == sid,
             Invoice.student_id == payload.student_id,
-            Invoice.currency == payload.currency.upper(),
+            Invoice.currency == currency,
             Invoice.status != "void",
         ).count()
         if matched != len(requested_ids):
@@ -68,7 +68,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
     else:
-        outstanding = student_balance(db, sid, payload.student_id, payload.currency.upper())
+        outstanding = student_balance(db, sid, payload.student_id, currency)
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
     payment = Payment(
