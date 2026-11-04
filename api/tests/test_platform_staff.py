@@ -151,7 +151,6 @@ def test_failed_profile_link_triggers_auth_user_compensation(
     monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
     import app.routers.platform_staff as staff_router
     monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
-    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     auth_id = str(uuid4())
     deleted = []
     monkeypatch.setattr(staff_router, "invite_auth_user", lambda email, name: auth_id)
