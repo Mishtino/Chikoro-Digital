@@ -25,18 +25,33 @@ class Principal:
     is_admin: bool
 
 
+def get_supabase_auth_identity(token: str = Depends(oauth2_scheme)) -> dict:
+    """Verify bearer token with Supabase Auth and return its verified identity."""
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Supabase Auth verification is not configured")
+    try:
+        response = httpx.get(
+            f"{settings.supabase_url.rstrip('/')}/auth/v1/user",
+            headers={"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}"},
+            timeout=5.0,
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid or expired Supabase session")
+        identity = response.json()
+        identity["id"] = str(UUID(identity["id"]))
+        return identity
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Unable to verify Supabase session")
+
+
 def get_current_principal(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Principal:
-    """Validate Supabase Auth in production and resolve permissions from profiles.
+    """Production authorization always comes from verified Supabase identity + profiles.
 
-    A legacy-token compatibility path is deliberately limited to non-production
-    environments to keep local development and existing test fixtures usable.
+    Legacy tokens are accepted only outside production for local development and
+    legacy test fixtures; they are never accepted by a production deployment.
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired Supabase session",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     if settings.env != "production":
         try:
             payload = decode_token(token)
@@ -46,23 +61,8 @@ def get_current_principal(token: str = Depends(oauth2_scheme), db: Session = Dep
         except Exception:
             pass
 
-    if not settings.supabase_url or not settings.supabase_anon_key:
-        raise HTTPException(status_code=503, detail="Supabase Auth verification is not configured")
-
-    try:
-        response = httpx.get(
-            f"{settings.supabase_url.rstrip('/')}/auth/v1/user",
-            headers={"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}"},
-            timeout=5.0,
-        )
-        if response.status_code != 200:
-            raise credentials_exception
-        auth_user_id = str(UUID(response.json()["id"]))
-    except HTTPException:
-        raise
-    except Exception:
-        raise credentials_exception
-
+    identity = get_supabase_auth_identity(token)
+    auth_user_id = identity["id"]
     profile = db.get(Profile, auth_user_id)
     if profile is None or not profile.is_active or profile.local_user_id is None:
         raise HTTPException(status_code=403, detail="Account is not provisioned. Contact your school administrator.")
