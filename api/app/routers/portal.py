@@ -167,6 +167,35 @@ def parent_child_report_card(student_id: int, term_id: Optional[int] = None, pri
         "subjects": results,
     }
 
+@router.get("/parent/children/{student_id}/terms")
+def parent_child_terms(student_id: int, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    """Return only terms with published marks for this verified linked learner."""
+    student = _parent_student(principal, student_id, db)
+    from app.models.results import Mark, Assessment
+    from app.models.fee import Term
+
+    terms = db.query(Term).join(
+        Assessment, Assessment.term_id == Term.id
+    ).join(
+        Mark, Mark.assessment_id == Assessment.id
+    ).filter(
+        Term.school_id == student.school_id,
+        Assessment.school_id == student.school_id,
+        Mark.school_id == student.school_id,
+        Mark.student_id == student.id,
+        Mark.status == "published",
+    ).distinct().order_by(
+        Term.academic_year.desc(), Term.start_date.desc(), Term.id.desc()
+    ).all()
+    return {
+        "terms": [
+            {"id": term.id, "name": term.name, "academic_year": term.academic_year,
+             "is_current": bool(term.is_current)}
+            for term in terms
+        ]
+    }
+
+
 @router.post("/register", status_code=status.HTTP_410_GONE)
 def portal_register():
     """Legacy local-password registration is disabled during Supabase migration."""
