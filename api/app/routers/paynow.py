@@ -77,13 +77,18 @@ def get_settings(school_id: Optional[int] = None, principal: Principal = Depends
 
 @router.post("/initiate")
 def initiate_payment(payload: PaynowInitiateRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
-    # determine school
-    if payload.student_id:
+    # Resolve the student first and bind portal users strictly to their own
+    # linked student record. A caller-supplied student_id is never authority.
+    student = None
+    if payload.student_id is not None:
         student = db.get(Student, payload.student_id)
         if student is None:
             raise HTTPException(status_code=404, detail="Student not found")
         sid = student.school_id
-        if not principal.is_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
+        if principal.role in ("student", "parent"):
+            if student.portal_user_id != principal.user_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        elif not principal.is_admin and principal.school_id != sid:
             raise HTTPException(status_code=403, detail="Access denied")
     elif principal.role in ("student", "parent"):
         student = db.query(Student).filter(Student.portal_user_id == principal.user_id).first()
@@ -98,16 +103,33 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: Principal = Depe
     if school is None or not school.paynow_integration_id or not school.paynow_integration_key:
         raise HTTPException(status_code=400, detail="Paynow not configured for school")
 
-    # determine amount
-    if payload.amount is not None:
-        amount = payload.amount
-    elif payload.invoice_ids:
-        invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
-        amount = sum(float(invoice_balance(db, inv)) for inv in invoices)
-    elif payload.student_id:
-        amount = float(student_balance(db, sid, payload.student_id))
+    if payload.invoice_ids:
+        requested_ids = set(payload.invoice_ids)
+        invoices = db.query(Invoice).filter(
+            Invoice.id.in_(requested_ids), Invoice.school_id == sid
+        ).all()
+        if len(invoices) != len(requested_ids):
+            raise HTTPException(status_code=404, detail="One or more invoices not found")
+        invoice_student_ids = {inv.student_id for inv in invoices}
+        if len(invoice_student_ids) != 1:
+            raise HTTPException(status_code=400, detail="Invoices must belong to one student")
+        invoice_student_id = next(iter(invoice_student_ids))
+        if payload.student_id is not None and payload.student_id != invoice_student_id:
+            raise HTTPException(status_code=403, detail="Invoice does not belong to this student")
+        if principal.role in ("student", "parent") and student and invoice_student_id != student.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        payload.student_id = invoice_student_id
+        selected_balance = sum(float(invoice_balance(db, inv)) for inv in invoices)
+        amount = selected_balance if payload.amount is None else payload.amount
+        if amount > selected_balance:
+            raise HTTPException(status_code=400, detail="Payment amount exceeds selected invoice balance")
     else:
-        raise HTTPException(status_code=400, detail="amount or student_id or invoice_ids required")
+        if payload.student_id is None:
+            raise HTTPException(status_code=400, detail="student_id or invoice_ids required")
+        outstanding = float(student_balance(db, sid, payload.student_id))
+        amount = outstanding if payload.amount is None else payload.amount
+        if amount > outstanding:
+            raise HTTPException(status_code=400, detail="Payment amount exceeds student balance")
 
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Nothing to pay")
@@ -185,9 +207,19 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
     polled = {}
     if attempt.poll_url:
         polled = poll_transaction(attempt.poll_url, integration_key)
-    attempt.hash_verified = bool(ping_verified or polled.get("hash_verified"))
+    poll_verified = polled.get("hash_verified") is True
+    attempt.hash_verified = bool(ping_verified or poll_verified)
 
-    status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
+    # Never trust an unsigned callback field or an unsigned poll response to
+    # move money. Paynow's signed callback or signed poll payload is required.
+    if not attempt.hash_verified:
+        db.commit()
+        return {"status": "unverified"}
+
+    if poll_verified:
+        status_val = (polled.get("Status") or polled.get("status") or "").lower()
+    else:
+        status_val = (data.get("status") or data.get("Status") or "").lower()
 
     if status_val == "paid":
         ref_key = f"paynow:{attempt.id}"
@@ -263,6 +295,9 @@ def reconcile(principal: Principal = Depends(get_current_principal), db: Session
             continue
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
+        if polled.get("hash_verified") is not True:
+            continue
+        att.hash_verified = True
         st = (polled.get("Status") or polled.get("status") or "").lower()
         if st == "paid" and att.status != "paid":
             ref_key = f"paynow:{att.id}"
