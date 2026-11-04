@@ -77,3 +77,8 @@ The read-only financial audit found zero rows in payments, payment allocations, 
 ## Owner bootstrap readiness check
 
 A read-only join found exactly one confirmed Supabase Auth identity matching the single active, unscoped local administrator by normalized email. The corresponding profile row remains unlinked; no identity mapping was written. The repository already contains a guarded `POST /auth/bootstrap-admin` endpoint that requires a 32+ character `ADMIN_BOOTSTRAP_TOKEN`, `VORTEX_PLATFORM_OWNER_EMAIL`, exactly one active unscoped local admin, and exactly one email-confirmed Auth identity. It refuses to run if a Vortex owner profile already exists and inserts the link only after those checks. The endpoint is not called during this audit. Before production use, verify the two Render environment variables are configured securely, and perform the bootstrap only with explicit approval. Regression tests for the endpoint have been added in `api/tests/test_bootstrap_admin.py`.
+
+
+## RLS execution-role note
+
+The live role catalog reports `postgres` and `service_role` as non-superuser roles with `BYPASSRLS`; `anon`, `authenticated`, and `authenticator` do not bypass RLS. This is a role capability finding, not confirmation of which database role Render currently uses. Verify the deployed API connection role through secret-safe configuration metadata before release. If it uses a BYPASSRLS role, every API route must enforce authentication, role authorization, and school/learner ownership in application queries; RLS alone is not a tenant boundary for that connection. Keep the browser roles restricted as currently observed.
