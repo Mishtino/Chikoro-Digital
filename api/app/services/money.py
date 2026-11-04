@@ -9,20 +9,20 @@ def to_decimal(value) -> Decimal:
     return Decimal(str(value)) if value is not None else Decimal("0")
 
 
-def invoice_paid_amount(db: Session, invoice_id: int) -> Decimal:
+def invoice_paid_amount(db: Session, invoice_id: int, currency: str) -> Decimal:
     total = (
         db.query(func.coalesce(func.sum(PaymentAllocation.amount), 0))
         .join(Payment, Payment.id == PaymentAllocation.payment_id)
         .filter(PaymentAllocation.invoice_id == invoice_id)
         .filter(Payment.voided.is_(False))
-        .filter(Payment.currency == Invoice.currency)
+        .filter(Payment.currency == currency)
         .scalar()
     )
     return to_decimal(total)
 
 
 def invoice_balance(db: Session, invoice: Invoice) -> Decimal:
-    return to_decimal(invoice.total) - invoice_paid_amount(db, invoice.id)
+    return to_decimal(invoice.total) - invoice_paid_amount(db, invoice.id, invoice.currency)
 
 
 def student_balance(db: Session, school_id: int, student_id: int, currency: str | None = None) -> Decimal:
@@ -35,7 +35,7 @@ def student_balance(db: Session, school_id: int, student_id: int, currency: str 
     total_invoiced = sum((to_decimal(i.total) for i in invoices), Decimal("0"))
     paid = Decimal("0")
     for inv in invoices:
-        paid += invoice_paid_amount(db, inv.id)
+        paid += invoice_paid_amount(db, inv.id, inv.currency)
     return total_invoiced - paid
 
 
