@@ -76,8 +76,8 @@ def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_
 
 @router.get("", response_model=List[SchoolOut])
 def list_schools(admin: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if not admin.is_admin:
-        raise HTTPException(status_code=403, detail="Platform administrator access required")
+    if not admin.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
     return db.query(School).order_by(School.id).all()
 
 
