@@ -29,7 +29,7 @@ class StaffInviteRequest(BaseModel):
 
     email: str = Field(min_length=5, max_length=255)
     full_name: str = Field(min_length=2, max_length=200)
-    role: Literal["vortex_support", "vortex_auditor", "vortex_billing"]
+    role: Literal["vortex_support", "vortex_auditor"]
 
     @field_validator("email")
     @classmethod
