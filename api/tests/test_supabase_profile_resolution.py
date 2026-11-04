@@ -37,6 +37,8 @@ def test_resolve_profile_returns_only_trusted_database_identity():
         "role": "student",
         "school_id": 4,
         "is_active": True,
+        "local_user_role": "student",
+        "local_school_id": 4,
         "is_admin": False,
         "local_user_is_active": True,
     }
@@ -56,11 +58,20 @@ def test_resolve_profile_returns_only_trusted_database_identity():
     [
         None,
         {"id": uuid4(), "local_user_id": 1, "role": "admin", "school_id": None,
-         "is_active": False, "is_admin": True, "local_user_is_active": True},
+         "is_active": False, "local_user_role": "staff", "local_school_id": None,
+         "is_admin": True, "local_user_is_active": True},
         {"id": uuid4(), "local_user_id": 1, "role": "admin", "school_id": None,
-         "is_active": True, "is_admin": True, "local_user_is_active": False},
+         "is_active": True, "local_user_role": "staff", "local_school_id": None,
+         "is_admin": True, "local_user_is_active": False},
         {"id": uuid4(), "local_user_id": None, "role": "pending", "school_id": None,
-         "is_active": False, "is_admin": False, "local_user_is_active": None},
+         "is_active": False, "local_user_role": None, "local_school_id": None,
+         "is_admin": False, "local_user_is_active": None},
+        {"id": uuid4(), "local_user_id": 1, "role": "admin", "school_id": None,
+         "is_active": True, "local_user_role": "student", "local_school_id": None,
+         "is_admin": False, "local_user_is_active": True},
+        {"id": uuid4(), "local_user_id": 1, "role": "student", "school_id": 99,
+         "is_active": True, "local_user_role": "student", "local_school_id": 4,
+         "is_admin": False, "local_user_is_active": True},
     ],
 )
 def test_resolve_profile_rejects_unlinked_or_inactive_accounts(row):
