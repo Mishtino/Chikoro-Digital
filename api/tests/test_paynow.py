@@ -186,11 +186,24 @@ def test_parent_cannot_initiate_paynow_for_unlinked_learner(
         role="parent", is_admin=False,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: parent
-    monkeypatch.setattr(db_session, "execute", lambda *_args, **_kwargs: None)
+    learner_id = learner.id
+    original_execute = db_session.execute
+
+    class EmptyLinkResult:
+        @staticmethod
+        def first():
+            return None
+
+    def execute_without_parent_link(statement, *args, **kwargs):
+        if "guardian_links" in str(statement):
+            return EmptyLinkResult()
+        return original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", execute_without_parent_link)
 
     response = client.post(
         "/paynow/initiate",
-        json={"student_id": learner.id, "amount": 1, "school_id": school.id},
+        json={"student_id": learner_id, "amount": 1, "school_id": school.id},
     )
 
     assert response.status_code == 404
