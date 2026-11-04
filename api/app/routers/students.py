@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
@@ -100,6 +101,27 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         pin=pin,
     )
     return result
+
+
+@router.post("/{student_id}/guardians/{contact_id}/activation-pin")
+def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
+    sid = principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped administrator access required")
+    student = db.query(Student).filter(Student.id == student_id, Student.school_id == sid).first()
+    contact = db.query(Contact).filter(Contact.id == contact_id, Contact.student_id == student_id, Contact.school_id == sid).first()
+    if student is None or contact is None:
+        raise HTTPException(status_code=404, detail="Student guardian contact not found")
+    if not contact.email:
+        raise HTTPException(status_code=422, detail="Guardian email is required for online activation")
+    activated = db.execute(text("SELECT guardian_activated_at FROM public.contacts WHERE id=:id AND school_id=:school_id"), {"id": contact_id, "school_id": sid}).scalar_one_or_none()
+    if activated is not None:
+        raise HTTPException(status_code=409, detail="Guardian contact is already activated")
+    pin = generate_pin(8)
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
+    db.execute(text("UPDATE public.contacts SET guardian_activation_pin_hash=:pin_hash, guardian_activation_expires_at=:expires_at WHERE id=:id AND student_id=:student_id AND school_id=:school_id"), {"pin_hash": hash_pin(pin), "expires_at": expires_at, "id": contact_id, "student_id": student_id, "school_id": sid})
+    db.commit()
+    return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
 
 @router.get("", response_model=List[StudentOut])
