@@ -1,7 +1,7 @@
 from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -43,6 +43,38 @@ class SchoolCreate(BaseModel):
             return value
         normalized = value.strip()
         return normalized or None
+
+
+class SchoolProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    province: Optional[str] = Field(default=None, max_length=100)
+    plan: Optional[str] = Field(default=None, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value):
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("School name cannot be empty")
+        return normalized
+
+    @field_validator("province", "plan")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def require_changes(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one school profile field must be supplied")
+        return self
 
 
 class SchoolStatusUpdate(BaseModel):
@@ -103,6 +135,43 @@ def get_school(school_id: int, principal: SupabasePrincipal = Depends(get_supaba
             raise HTTPException(status_code=403, detail="Vortex platform permission required")
     elif principal.school_id != school_id:
         raise HTTPException(status_code=403, detail="Access denied")
+    return school
+
+
+@router.patch("/{school_id}", response_model=SchoolOut)
+def update_school_profile(
+    school_id: int,
+    payload: SchoolProfileUpdate,
+    admin: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if not admin.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
+    school = db.get(School, school_id)
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+
+    changes = {}
+    for field, new_value in payload.model_dump(exclude_unset=True).items():
+        old_value = getattr(school, field)
+        if old_value != new_value:
+            changes[field] = {"from": old_value, "to": new_value}
+            setattr(school, field, new_value)
+
+    if not changes:
+        return school
+
+    db.commit()
+    db.refresh(school)
+    write_audit(
+        db,
+        admin,
+        "school.profile_update",
+        "school",
+        school.id,
+        {"changes": changes},
+        school_id=None,
+    )
     return school
 
 
