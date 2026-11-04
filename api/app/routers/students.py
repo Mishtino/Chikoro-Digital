@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.student import Student, Contact
 from app.models.school import School
 from app.services.ids import generate_student_number, generate_pin, hash_pin
@@ -44,7 +44,7 @@ class StudentCreateResult(StudentOut):
     pin: str
 
 
-def _school_id(principal: Principal, requested: Optional[int]) -> int:
+def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required for admin")
@@ -55,7 +55,7 @@ def _school_id(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.post("", response_model=StudentCreateResult, status_code=status.HTTP_201_CREATED)
-def create_student(payload: StudentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
     sid = _school_id(principal, payload.school_id)
     school = db.get(School, sid)
     if school is None:
