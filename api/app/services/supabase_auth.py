@@ -100,13 +100,16 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     # The bridge must not become a way to elevate a local account or move it
     # into another school's tenant. Vortex administrators are the sole
     # intentional role exception and must be marked admin in public.users.
-    legacy_global_admin = (
-        bool(row["is_admin"]) and row["role"] == "admin" and row["school_id"] is None
-    )
-    role_matches = (
-        (row["role"] == row["local_user_role"] and not legacy_global_admin)
-        or (bool(row["is_admin"]) and row["role"] == "vortex_admin")
-    )
+    if bool(row["is_admin"]):
+        # Global privilege is valid only for the dedicated Vortex role with no tenant.
+        role_matches = (
+            row["role"] == "vortex_admin"
+            and row["local_user_role"] == "admin"
+            and row["school_id"] is None
+            and row["local_school_id"] is None
+        )
+    else:
+        role_matches = row["role"] == row["local_user_role"]
     school_matches = row["school_id"] == row["local_school_id"]
     if not role_matches or not school_matches:
         raise HTTPException(status_code=403, detail="Account identity does not match its school record")
