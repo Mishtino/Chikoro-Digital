@@ -99,6 +99,7 @@ def parent_child_fee_status(student_id: int, principal: SupabasePrincipal = Depe
     invoices = db.query(Invoice).filter(
         Invoice.school_id == student.school_id,
         Invoice.student_id == student.id,
+        Invoice.status != "void",
     ).order_by(Invoice.id).all()
     items = [
         {
@@ -186,7 +187,7 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
     student = linked_students[0]
     if student.status != "active":
         raise HTTPException(status_code=403, detail="Student account is inactive")
-    invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id).order_by(Invoice.id).all()
+    invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id, Invoice.status != "void").order_by(Invoice.id).all()
     items = []
     for inv in invoices:
         bal = invoice_balance(db, inv)
