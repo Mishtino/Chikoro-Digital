@@ -16,8 +16,6 @@ class Settings(BaseSettings):
     paynow_result_url: str = "http://localhost:8000/paynow/webhook"
     supabase_url: Optional[str] = None
     supabase_publishable_key: Optional[str] = None
-    bootstrap_admin_email: Optional[str] = None
-    bootstrap_admin_password: Optional[str] = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
