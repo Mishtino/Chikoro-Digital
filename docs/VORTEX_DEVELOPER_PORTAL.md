@@ -15,7 +15,7 @@ The Vortex portal is the platform-operator workspace for Chikoro Digital. It is 
 3. Set `VORTEX_PLATFORM_OWNER_EMAIL` to that exact verified address in the Render API environment.
 4. Set a one-time `ADMIN_BOOTSTRAP_TOKEN` of at least 32 characters in the same environment. Keep it secret; never put it in a browser variable or source control.
 5. Apply the reviewed Supabase migrations in order. The Vortex role migration only promotes matching platform-owner profiles; it does not change school accounts.
-6. Call `POST /auth/bootstrap-admin` once with the bootstrap token in the `X-Chikoro-Bootstrap-Token` header. The endpoint requires an empty profiles table and a unique, confirmed Supabase identity matching the configured owner email.
+6. Call `POST /auth/bootstrap-admin` once with the bootstrap token in the `X-Chikoro-Bootstrap-Token` header. The endpoint requires that no Vortex platform-owner profile has already been provisioned and a unique, confirmed Supabase identity matching the configured owner email. Existing school profiles do not block first-time owner provisioning.
 7. Remove or rotate the bootstrap token after successful provisioning. Sign in through the Vortex portal and verify `GET /auth/supabase/me` returns `is_platform_admin: true`.
 
 ## Security notes
