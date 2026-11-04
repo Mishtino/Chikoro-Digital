@@ -38,3 +38,17 @@ The Vortex role separation in the application is implemented in FastAPI and the 
 - payment_allocations does not yet have a database uniqueness or composite tenant-integrity constraint.
 - Before adding these constraints, run read-only duplicate/orphan/mismatch reports against a production snapshot, resolve any historical exceptions, prepare a forward-only Supabase migration, and verify it against staging. No production migration is authorized by this review.
 - Receipt uniqueness is already represented in the SQLAlchemy model as (school_id, receipt_number); verify that the live database has the matching constraint before relying on it as a production guarantee.
+
+
+## Read-only live database audit — 4 November 2026
+
+The connected Supabase project was queried without modifying data:
+
+- `payments`: 0 rows; `payment_allocations`: 0 rows; `receipts`: 0 rows; `invoices`: 0 rows; `paynow_attempts`: 0 rows.
+- Duplicate Paynow payment references, duplicate `(payment_id, invoice_id)` allocation pairs, duplicate receipt numbers, cross-school allocations, and cross-student allocations each returned zero issue groups.
+- The live database has `receipts_school_id_receipt_number_key` as a unique constraint on `(school_id, receipt_number)`.
+- The live database has no unique constraint on `payments.reference` and no unique constraint on `(payment_id, invoice_id)` in `payment_allocations`.
+- The live `supabase_migrations.schema_migrations` history currently lists four applied migrations: `create_profiles_identity_foundation`, `lock_down_public_data_api`, `add_verified_guardian_link_foundation`, and `add_guardian_activation_fields`. Reconcile this history with repository migration files before applying any further migration.
+- The live `public.profiles` table currently has no CHECK constraints. The platform staff invitation path therefore remains correctly fail-closed until the role constraint migration is reconciled and applied through the approved release process.
+
+These are point-in-time findings, not a guarantee that the database remains unchanged. No SQL DDL, data writes, migration application, or production configuration changes were made during this audit.
