@@ -3,7 +3,7 @@ import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -33,8 +33,7 @@ class TermOut(BaseModel):
     academic_year: str
     is_current: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FeeItemCreate(BaseModel):
@@ -53,8 +52,7 @@ class FeeItemOut(BaseModel):
     currency: str
     applies_to_form: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 class FeeStructureCreate(BaseModel):
     term_id: int
     form: Optional[str] = None
