@@ -69,7 +69,7 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
 
 
 @router.get("/me")
-def portal_me(principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def portal_me(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     from app.models.user import User
     user = db.get(User, principal.user_id)
     if user is None or not user.is_active:
