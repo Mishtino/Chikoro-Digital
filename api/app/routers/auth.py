@@ -23,6 +23,10 @@ class ParentActivationRequest(BaseModel):
     pin: str
 
 
+class StudentActivationRequest(BaseModel):
+    pin: str
+
+
 @router.post("/bootstrap-admin")
 def bootstrap_first_admin(
     setup_token: str = Header(default="", alias="X-Chikoro-Bootstrap-Token"),
@@ -194,6 +198,98 @@ def activate_parent_account(
     """), {"school_id": contact["school_id"], "user_id": local_user.id, "contact_id": str(contact["id"])})
     db.commit()
     return {"message": "Parent account activated and linked to the verified learner."}
+
+
+@router.post("/student/activate")
+def activate_student_account(
+    payload: StudentActivationRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Supabase bearer token required")
+    if len(payload.pin) != 8 or not payload.pin.isdigit():
+        raise HTTPException(status_code=422, detail="Activation PIN must contain exactly eight digits")
+    claims = verify_supabase_access_token(credentials.credentials)
+    auth_id = claims["sub"]
+    auth_user = db.execute(text("""
+        SELECT email, email_confirmed_at
+        FROM auth.users
+        WHERE id = CAST(:auth_id AS uuid)
+    """), {"auth_id": auth_id}).mappings().first()
+    if not auth_user or not auth_user["email"] or auth_user["email_confirmed_at"] is None:
+        raise HTTPException(status_code=403, detail="Verify your email address before activating the student portal")
+
+    email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
+    failed_attempts = db.execute(text("""
+        SELECT count(*) FROM public.audit_logs
+        WHERE action = 'student.activation.failed'
+          AND entity_type = 'student_email_hash'
+          AND entity_id = :email_hash
+          AND created_at > now() - interval '1 hour'
+    """), {"email_hash": email_hash}).scalar_one()
+    if failed_attempts >= 5:
+        raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
+
+    local_user = db.query(User).filter(func.lower(User.email) == auth_user["email"].lower()).first()
+    student = None
+    if local_user and local_user.is_active and local_user.role == "student" and local_user.school_id is not None:
+        candidates = db.query(Student).filter(
+            Student.portal_user_id == local_user.id,
+            Student.school_id == local_user.school_id,
+            Student.status == "active",
+            Student.activated_at.is_(None),
+            Student.activation_pin_hash.isnot(None),
+            Student.activation_expires_at > func.now(),
+        ).all()
+        matches = [item for item in candidates if verify_pin(payload.pin, item.activation_pin_hash)]
+        if len(matches) == 1:
+            student = matches[0]
+
+    if student is None:
+        db.execute(text("""
+            INSERT INTO public.audit_logs (action, entity_type, entity_id, details, created_at)
+            VALUES ('student.activation.failed', 'student_email_hash', :email_hash, '{}'::jsonb, now())
+        """), {"email_hash": email_hash})
+        db.commit()
+        raise HTTPException(status_code=403, detail="Activation PIN is invalid, expired, or not assigned to this student")
+
+    existing_profile = db.execute(text("""
+        SELECT local_user_id, role, school_id, is_active
+        FROM public.profiles
+        WHERE id = CAST(:auth_id AS uuid)
+    """), {"auth_id": auth_id}).mappings().first()
+    if existing_profile and (
+        existing_profile["local_user_id"] != local_user.id
+        or existing_profile["role"] != "student"
+        or existing_profile["school_id"] != student.school_id
+        or not existing_profile["is_active"]
+    ):
+        raise HTTPException(status_code=409, detail="This Supabase identity is already linked to another account")
+    other_profile = db.execute(text("""
+        SELECT id FROM public.profiles WHERE local_user_id = :local_user_id AND id <> CAST(:auth_id AS uuid) LIMIT 1
+    """), {"local_user_id": local_user.id, "auth_id": auth_id}).first()
+    if other_profile is not None:
+        raise HTTPException(status_code=409, detail="This student account is already linked to another Supabase identity")
+    if not existing_profile:
+        db.execute(text("""
+            INSERT INTO public.profiles
+                (id, local_user_id, role, school_id, is_active, created_at, updated_at)
+            VALUES
+                (CAST(:auth_id AS uuid), :local_user_id, 'student', :school_id, true, now(), now())
+        """), {"auth_id": auth_id, "local_user_id": local_user.id, "school_id": student.school_id})
+
+    db.execute(text("""
+        UPDATE public.students
+        SET activated_at = now(), activation_pin_hash = NULL, activation_expires_at = NULL
+        WHERE id = :student_id AND school_id = :school_id
+    """), {"student_id": student.id, "school_id": student.school_id})
+    db.execute(text("""
+        INSERT INTO public.audit_logs (school_id, actor_user_id, action, entity_type, entity_id, details, created_at)
+        VALUES (:school_id, :user_id, 'student.activation.succeeded', 'student', :student_id, '{}'::jsonb, now())
+    """), {"school_id": student.school_id, "user_id": local_user.id, "student_id": str(student.id)})
+    db.commit()
+    return {"message": "Student account activated successfully."}
 
 
 @router.post("/login", status_code=status.HTTP_410_GONE)
