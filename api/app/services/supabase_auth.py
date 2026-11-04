@@ -100,8 +100,12 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     # The bridge must not become a way to elevate a local account or move it
     # into another school's tenant. Vortex administrators are the sole
     # intentional role exception and must be marked admin in public.users.
-    role_matches = row["role"] == row["local_user_role"] or (
-        bool(row["is_admin"]) and row["role"] == "vortex_admin"
+    legacy_global_admin = (
+        bool(row["is_admin"]) and row["role"] == "admin" and row["school_id"] is None
+    )
+    role_matches = (
+        (row["role"] == row["local_user_role"] and not legacy_global_admin)
+        or (bool(row["is_admin"]) and row["role"] == "vortex_admin")
     )
     school_matches = row["school_id"] == row["local_school_id"]
     if not role_matches or not school_matches:
