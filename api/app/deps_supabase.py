@@ -21,6 +21,11 @@ class SupabasePrincipal:
     role: str
     is_admin: bool
 
+    @property
+    def is_platform_admin(self) -> bool:
+        """Only the separately provisioned Vortex platform role has global access."""
+        return self.is_admin and self.role == "vortex_admin" and self.school_id is None
+
 
 def get_supabase_principal(
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
