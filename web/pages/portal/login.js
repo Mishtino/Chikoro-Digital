@@ -35,7 +35,7 @@ export default function PortalLogin() {
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button type="submit">Log in</button>
         </form>
-        <p><a href="/portal/register">Register with your slip</a></p>
+        <p><a href="/portal/register">Register with your slip</a></p>\n        <p><a href="/admin/register">Administrator account setup</a></p>
       </div>
     </div>
   );
