@@ -50,6 +50,11 @@ def create_user(payload: UserCreate, principal: Principal = Depends(get_current_
         school_id = principal.school_id
     if not _can_manage(principal, school_id):
         raise HTTPException(status_code=403, detail="Not allowed")
+    allowed_roles = {"owner", "bursar", "headmaster", "teacher", "student", "parent", "admin"}
+    if payload.role not in allowed_roles:
+        raise HTTPException(status_code=400, detail="Invalid user role")
+    if payload.role == "admin" and (not principal.is_admin or school_id is not None):
+        raise HTTPException(status_code=403, detail="Only Vortex administrators can create global admins")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     user = User(
@@ -58,7 +63,7 @@ def create_user(payload: UserCreate, principal: Principal = Depends(get_current_
         password_hash=hash_password(payload.password),
         role=payload.role,
         school_id=school_id,
-        is_admin=(payload.role == "admin"),
+        is_admin=(principal.is_admin and payload.role == "admin"),
     )
     db.add(user)
     db.commit()
@@ -69,6 +74,8 @@ def create_user(payload: UserCreate, principal: Principal = Depends(get_current_
 
 @router.get("", response_model=List[UserOut])
 def list_users(school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+        raise HTTPException(status_code=403, detail="Not allowed")
     q = db.query(User)
     if principal.is_admin:
         if school_id is not None:
