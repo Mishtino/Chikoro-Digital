@@ -165,3 +165,34 @@ def test_unverified_paid_paynow_webhook_does_not_create_financial_records(
     assert db_session.query(Receipt).count() == 0
     db_session.refresh(attempt)
     assert attempt.status == "unverified"
+
+
+
+def test_parent_cannot_initiate_paynow_for_unlinked_learner(
+    client, db_session, monkeypatch
+):
+    school = School(code="PN004", name="Parent Isolation School")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(
+        school_id=school.id, student_number="PN-P1", first_name="Parent",
+        last_name="Isolation", status="active",
+    )
+    db_session.add(learner)
+    db_session.commit()
+
+    parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9004, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+    monkeypatch.setattr(db_session, "execute", lambda *_args, **_kwargs: None)
+
+    response = client.post(
+        "/paynow/initiate",
+        json={"student_id": learner.id, "amount": 1, "school_id": school.id},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Linked student not found"
+    assert db_session.query(PaynowAttempt).count() == 0
