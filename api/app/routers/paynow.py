@@ -98,9 +98,24 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     if school is None or not school.paynow_integration_id or not school.paynow_integration_key:
         raise HTTPException(status_code=400, detail="Paynow not configured for school")
 
+    # Until the attempt schema supports multiple allocations, accept one invoice per checkout.
+    if payload.invoice_ids and len(set(payload.invoice_ids)) != 1:
+        raise HTTPException(status_code=422, detail="Paynow checkout currently supports one invoice at a time")
+    if payload.invoice_ids:
+        selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid).first()
+        if selected_invoice is None:
+            raise HTTPException(status_code=404, detail="Invoice not found in this school")
+        if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
+            raise HTTPException(status_code=422, detail="Invoice does not belong to the selected student")
+        payload.student_id = selected_invoice.student_id
+
     # determine amount
     if payload.amount is not None:
         amount = payload.amount
+        if amount <= 0:
+            raise HTTPException(status_code=422, detail="Payment amount must be positive")
+        if payload.invoice_ids and amount > float(invoice_balance(db, selected_invoice)):
+            raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
     elif payload.invoice_ids:
         invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
         amount = sum(float(invoice_balance(db, inv)) for inv in invoices)
@@ -189,6 +204,10 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
 
     status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
 
+    if status_val == "paid" and not attempt.hash_verified:
+        attempt.status = "unverified"
+        db.commit()
+        return {"status": "payment confirmation hash could not be verified"}
     if status_val == "paid":
         ref_key = f"paynow:{attempt.id}"
         existing = db.query(Payment).filter(Payment.reference == ref_key).first()
@@ -264,6 +283,10 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
         st = (polled.get("Status") or polled.get("status") or "").lower()
+        if st == "paid" and not polled.get("hash_verified"):
+            att.status = "unverified"
+            updated += 1
+            continue
         if st == "paid" and att.status != "paid":
             ref_key = f"paynow:{att.id}"
             existing = db.query(Payment).filter(Payment.reference == ref_key).first()
