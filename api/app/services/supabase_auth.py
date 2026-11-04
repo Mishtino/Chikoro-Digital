@@ -101,7 +101,7 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     # into another school's tenant. Vortex administrators are the sole
     # intentional role exception and must be marked admin in public.users.
     role_matches = row["role"] == row["local_user_role"] or (
-        bool(row["is_admin"]) and row["role"] in {"admin", "vortex_admin"}
+        bool(row["is_admin"]) and row["role"] == "vortex_admin"
     )
     school_matches = row["school_id"] == row["local_school_id"]
     if not role_matches or not school_matches:
