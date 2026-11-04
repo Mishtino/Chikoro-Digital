@@ -101,6 +101,9 @@ def parent_child_fee_status(student_id: int, principal: SupabasePrincipal = Depe
         Invoice.student_id == student.id,
         Invoice.status != "void",
     ).order_by(Invoice.id).all()
+    balances_by_currency = {}
+    for invoice in invoices:
+        balances_by_currency[invoice.currency] = balances_by_currency.get(invoice.currency, 0.0) + float(invoice_balance(db, invoice))
     items = [
         {
             "invoice_number": inv.invoice_number,
@@ -115,7 +118,8 @@ def parent_child_fee_status(student_id: int, principal: SupabasePrincipal = Depe
         "student_number": student.student_number,
         "name": f"{student.first_name} {student.last_name}",
         "invoices": items,
-        "total_balance": float(student_balance(db, student.school_id, student.id)),
+        "total_balance": balances_by_currency.get("USD", 0.0),
+        "balances_by_currency": balances_by_currency,
     }
 
 
@@ -198,12 +202,16 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
             "currency": inv.currency,
             "issued_at": inv.issued_at.isoformat() if inv.issued_at else None,
         })
-    total_balance = student_balance(db, student.school_id, student.id)
+    balances_by_currency = {}
+    for invoice in invoices:
+        balances_by_currency[invoice.currency] = balances_by_currency.get(invoice.currency, 0.0) + float(invoice_balance(db, invoice))
+    total_balance = balances_by_currency.get("USD", 0.0)
     return {
         "student_number": student.student_number,
         "name": f"{student.first_name} {student.last_name}",
         "invoices": items,
         "total_balance": float(total_balance),
+        "balances_by_currency": balances_by_currency,
     }
 
 
