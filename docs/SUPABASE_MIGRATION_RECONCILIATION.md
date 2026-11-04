@@ -72,3 +72,8 @@ The read-only financial audit found zero rows in payments, payment allocations, 
 - No production data or user identity was changed.
 - No Render environment variable or deployment was changed.
 - The Vortex staff invitation endpoint must remain fail-closed until the live role allow-list is migrated and the required server-side Supabase Auth Admin secret is configured.
+
+
+## Owner bootstrap readiness check
+
+A read-only join found exactly one confirmed Supabase Auth identity matching the single active, unscoped local administrator by normalized email. The corresponding profile row remains unlinked; no identity mapping was written. The repository already contains a guarded `POST /auth/bootstrap-admin` endpoint that requires a 32+ character `ADMIN_BOOTSTRAP_TOKEN`, `VORTEX_PLATFORM_OWNER_EMAIL`, exactly one active unscoped local admin, and exactly one email-confirmed Auth identity. It refuses to run if a Vortex owner profile already exists and inserts the link only after those checks. The endpoint is not called during this audit. Before production use, verify the two Render environment variables are configured securely, and perform the bootstrap only with explicit approval. Regression tests for the endpoint have been added in `api/tests/test_bootstrap_admin.py`.
