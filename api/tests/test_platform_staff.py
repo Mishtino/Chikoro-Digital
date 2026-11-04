@@ -39,6 +39,7 @@ def _install_sqlite_profiles(db_session, monkeypatch):
         query = query.replace("public.profiles", "profiles")
         query = query.replace("CAST(:auth_id AS uuid)", ":auth_id")
         query = query.replace("now()", "CURRENT_TIMESTAMP")
+        query = query.replace("FOR UPDATE", "")
         return original_text(query)
 
     monkeypatch.setattr(staff_router, "text", sqlite_text)
@@ -181,3 +182,76 @@ def test_invitation_is_blocked_until_staff_role_migration_is_applied(client, see
 
     assert response.status_code == 503
     assert "migration" in response.json()["detail"].lower()
+
+
+
+def _create_managed_staff(db_session, role="vortex_support", active=True):
+    local = User(
+        email=f"{role}-{uuid4().hex[:8]}@example.com",
+        full_name="Platform Staff",
+        password_hash="not-a-login-password",
+        role=role,
+        school_id=None,
+        is_active=active,
+        is_admin=False,
+    )
+    db_session.add(local)
+    db_session.flush()
+    auth_id = str(uuid4())
+    db_session.execute(sql_text("""
+        INSERT INTO profiles (id, local_user_id, role, school_id, is_active, created_at, updated_at)
+        VALUES (:id, :local_id, :role, NULL, :active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    """), {"id": auth_id, "local_id": local.id, "role": role, "active": active})
+    db_session.commit()
+    return auth_id, local
+
+
+def test_owner_can_disable_and_reenable_platform_staff(client, seed_two_schools, db_session, monkeypatch):
+    _install_sqlite_profiles(db_session, monkeypatch)
+    auth_id, local = _create_managed_staff(db_session)
+    owner = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
+
+    disabled = client.patch(f"/platform/staff/{auth_id}/status", json={"is_active": False})
+    assert disabled.status_code == 200
+    assert disabled.json()["is_active"] is False
+    db_session.refresh(local)
+    profile = db_session.execute(sql_text("SELECT is_active FROM profiles WHERE id = :id"), {"id": auth_id}).first()
+    assert local.is_active is False
+    assert profile[0] == 0
+
+    enabled = client.patch(f"/platform/staff/{auth_id}/status", json={"is_active": True})
+    assert enabled.status_code == 200
+    db_session.refresh(local)
+    profile = db_session.execute(sql_text("SELECT is_active FROM profiles WHERE id = :id"), {"id": auth_id}).first()
+    assert local.is_active is True
+    assert profile[0] == 1
+
+
+def test_owner_account_cannot_be_disabled_through_staff_lifecycle(client, seed_two_schools, db_session, monkeypatch):
+    _install_sqlite_profiles(db_session, monkeypatch)
+    owner = seed_two_schools["admin"]
+    owner_auth_id = str(uuid4())
+    db_session.execute(sql_text("""
+        INSERT INTO profiles (id, local_user_id, role, school_id, is_active, created_at, updated_at)
+        VALUES (:id, :local_id, 'vortex_admin', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    """), {"id": owner_auth_id, "local_id": owner.id})
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
+
+    response = client.patch(f"/platform/staff/{owner_auth_id}/status", json={"is_active": False})
+    assert response.status_code == 404
+    db_session.refresh(owner)
+    assert owner.is_active is True
+
+
+def test_school_admin_cannot_change_platform_staff_status(client, seed_two_schools):
+    school_owner = seed_two_schools["u1"]
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=school_owner.id, school_id=school_owner.school_id,
+        role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    response = client.patch(f"/platform/staff/{uuid4()}/status", json={"is_active": False})
+    assert response.status_code == 403
