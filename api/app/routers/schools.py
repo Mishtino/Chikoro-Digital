@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -40,6 +40,19 @@ class SchoolCreate(BaseModel):
     def trim_optional_text(cls, value):
         if value is None:
             return value
+        normalized = value.strip()
+        return normalized or None
+
+
+class SchoolStatusUpdate(BaseModel):
+    status: Literal["onboarding", "live", "suspended"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value):
+        if value is None:
+            return None
         normalized = value.strip()
         return normalized or None
 
@@ -88,4 +101,38 @@ def get_school(school_id: int, principal: SupabasePrincipal = Depends(get_supaba
         raise HTTPException(status_code=404, detail="School not found")
     if not principal.is_platform_admin and principal.school_id != school_id:
         raise HTTPException(status_code=403, detail="Access denied")
+    return school
+
+
+@router.patch("/{school_id}/status", response_model=SchoolOut)
+def update_school_status(
+    school_id: int,
+    payload: SchoolStatusUpdate,
+    admin: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if not admin.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
+    school = db.get(School, school_id)
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    previous_status = school.status
+    if previous_status == payload.status:
+        return school
+    school.status = payload.status
+    db.commit()
+    db.refresh(school)
+    write_audit(
+        db,
+        admin,
+        "school.status_change",
+        "school",
+        school.id,
+        {
+            "previous_status": previous_status,
+            "new_status": payload.status,
+            "reason": payload.reason,
+        },
+        school_id=None,
+    )
     return school
