@@ -687,3 +687,61 @@ def test_verified_paynow_attempt_is_not_settled_above_remaining_invoice_balance(
     assert db_session.query(Receipt).count() == 0
     db_session.refresh(attempt)
     assert attempt.status == "unverified"
+
+
+def test_paynow_receipts_are_sequential_for_distinct_attempts_in_one_school(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN015", name="Paynow Receipt Sequence",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    attempts = []
+    for index in (1, 2):
+        student = Student(
+            school_id=school.id, student_number=f"PN-SEQ-{index}",
+            first_name="Receipt", last_name=f"Student {index}", status="active",
+        )
+        db_session.add(student)
+        db_session.flush()
+        invoice = Invoice(
+            school_id=school.id, student_id=student.id,
+            invoice_number=f"PN-SEQ-INV-{index}", currency="USD",
+            total=10, status="issued",
+        )
+        db_session.add(invoice)
+        db_session.flush()
+        attempt = PaynowAttempt(
+            school_id=school.id, student_id=student.id, invoice_id=invoice.id,
+            reference=f"PN-SEQ-{index}", amount=10, currency="USD",
+            status="sent",
+            poll_url=f"https://www.paynow.co.zw/interface/checkpayment/?guid=seq-{index}",
+        )
+        db_session.add(attempt)
+        attempts.append(attempt)
+    db_session.commit()
+
+    def verified_poll(url, _key):
+        index = "1" if "seq-1" in url else "2"
+        return {
+            "Status": "Paid", "reference": f"PN-SEQ-{index}",
+            "amount": "10.00", "hash_verified": True,
+        }
+
+    monkeypatch.setattr(paynow, "poll_transaction", verified_poll)
+    receipt_numbers = []
+    for attempt in attempts:
+        response = client.post("/paynow/webhook", data={"reference": attempt.reference})
+        assert response.status_code == 200
+        receipt_numbers.append(
+            db_session.query(Receipt).filter(
+                Receipt.payment_id == db_session.query(Payment).filter(
+                    Payment.reference == f"paynow:{attempt.id}"
+                ).one().id
+            ).one().receipt_number
+        )
+
+    assert receipt_numbers == ["RCP-00001", "RCP-00002"]
