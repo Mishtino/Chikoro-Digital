@@ -94,6 +94,8 @@ def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[
     if subject_id is not None:
         q = q.filter(Assessment.subject_id == subject_id)
     if term_id is not None:
+        if db.query(Term).filter(Term.id == term_id, Term.school_id == student.school_id).first() is None:
+            raise HTTPException(status_code=404, detail="Term not found in this school")
         q = q.filter(Assessment.term_id == term_id)
     return q.order_by(Assessment.id).all()
 
@@ -126,7 +128,7 @@ def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal
     sid = _sid(principal, school_id)
     if db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first() is None:
         raise HTTPException(status_code=404, detail="Assessment not found in this school")
-    updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).update({"status": "approved"})
+    updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id, Mark.status == "draft").update({"status": "approved"})
     db.commit()
     return {"approved": updated}
 @router.post("/marks/publish")
@@ -135,7 +137,9 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
     assessment = db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first()
     if assessment is None:
         raise HTTPException(status_code=404, detail="Assessment not found in this school")
-    marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).all()
+    marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id, Mark.status == "approved").all()
+    if not marks:
+        raise HTTPException(status_code=409, detail="No approved marks are available to publish")
     from datetime import datetime, timezone
     for m in marks:
         m.status = "published"
@@ -145,7 +149,7 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
     from app.models.student import Contact
     students = {m.student_id for m in marks}
     for st_id in students:
-        contacts = db.query(Contact).filter(Contact.student_id == st_id, Contact.is_primary == True).all()
+        contacts = db.query(Contact).filter(Contact.student_id == st_id, Contact.school_id == sid, Contact.is_primary == True).all()
         for c in contacts:
             if c.email:
                 dedupe = f"results-published:{assessment_id}:{st_id}:email"
@@ -169,7 +173,7 @@ def report_card(student_id: int, term_id: Optional[int] = None, principal: Supab
         raise HTTPException(status_code=404, detail="Student not found")
     if not principal.is_admin and principal.school_id != student.school_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    q = db.query(Mark, Assessment, Subject).join(Assessment, Assessment.id == Mark.assessment_id).join(Subject, Subject.id == Assessment.subject_id).filter(Mark.student_id == student_id, Mark.status == "published")
+    q = db.query(Mark, Assessment, Subject).join(Assessment, Assessment.id == Mark.assessment_id).join(Subject, Subject.id == Assessment.subject_id).filter(Mark.school_id == student.school_id, Assessment.school_id == student.school_id, Subject.school_id == student.school_id, Mark.student_id == student_id, Mark.status == "published")
     if term_id is not None:
         q = q.filter(Assessment.term_id == term_id)
     rows = q.all()
