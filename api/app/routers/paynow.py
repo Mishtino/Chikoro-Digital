@@ -1,5 +1,6 @@
 from typing import List, Optional
 import uuid
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from pydantic import BaseModel
@@ -131,8 +132,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     # determine amount
     if payload.amount is not None:
         amount = payload.amount
-        if amount <= 0:
-            raise HTTPException(status_code=422, detail="Payment amount must be positive")
+        if not math.isfinite(amount) or amount <= 0:
+            raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
         if payload.invoice_ids and amount > float(invoice_balance(db, selected_invoice)):
             raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
         if not payload.invoice_ids and payload.student_id and amount > float(student_balance(db, sid, payload.student_id)):
