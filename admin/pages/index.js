@@ -1,14 +1,21 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import { getSupabaseBrowserClient } from '../lib/supabase';
 export default function AdminLogin() {
   const router=useRouter(); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [error,setError]=useState(''); const [loading,setLoading]=useState(false);
   async function submit(e){
     e.preventDefault();setError('');setLoading(true);
     try{
-      const form=new URLSearchParams();form.append('username',email);form.append('password',password);
-      const res=await fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000'}/auth/login`,{method:'POST',body:form});
-      const data=await res.json();if(!res.ok)throw new Error(data.detail||'Sign in failed. Check your email and password.');
-      localStorage.setItem('token',data.access_token);router.push('/dashboard');
+      const supabase=getSupabaseBrowserClient();
+      const {data,error:signInError}=await supabase.auth.signInWithPassword({email:email.trim(),password});
+      if(signInError)throw signInError;
+      const accessToken=data.session?.access_token;
+      if(!accessToken)throw new Error('A secure session could not be created. Please try again.');
+      const response=await fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000'}/auth/supabase/me`,{headers:{Authorization:`Bearer ${accessToken}`}});
+      const profile=await response.json();
+      if(!response.ok)throw new Error(profile.detail||'This account is not activated for administrator access.');
+      if(!profile.is_admin)throw new Error('This account is not authorised for the Vortex control centre.');
+      router.push('/dashboard');
     }catch(err){setError(err.message);}finally{setLoading(false);}
   }
   return <main className="admin-auth">
