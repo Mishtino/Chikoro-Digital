@@ -1,8 +1,9 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal
@@ -13,10 +14,26 @@ router = APIRouter(prefix="/schools", tags=["schools"])
 
 
 class SchoolCreate(BaseModel):
-    code: str
-    name: str
-    province: Optional[str] = None
-    plan: Optional[str] = "pilot"
+    code: str = Field(min_length=2, max_length=20)
+    name: str = Field(min_length=2, max_length=200)
+    province: Optional[str] = Field(default=None, max_length=100)
+    plan: Optional[str] = Field(default="pilot", max_length=50)
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized or not all(ch.isalnum() or ch == "-" for ch in normalized):
+            raise ValueError("School code may contain only letters, numbers and hyphens")
+        return normalized
+
+    @field_validator("name", "province", "plan")
+    @classmethod
+    def trim_optional_text(cls, value):
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
 
 
 class SchoolOut(BaseModel):
@@ -39,7 +56,11 @@ def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_
         raise HTTPException(status_code=400, detail="School code already exists")
     school = School(code=payload.code, name=payload.name, province=payload.province, plan=payload.plan)
     db.add(school)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="School code already exists")
     db.refresh(school)
     write_audit(db, admin, "school.create", "school", school.id, {"code": school.code}, school_id=None)
     return school
