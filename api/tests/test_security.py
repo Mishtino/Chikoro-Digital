@@ -11,6 +11,18 @@ def _token(user):
     return create_access_token(str(user.id), user.school_id, user.role, user.is_admin)
 
 
+def test_render_default_health_probe_returns_ok(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_health_endpoint_returns_ok(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
 def test_school_owner_cannot_create_global_admin(client, seed_two_schools):
     owner = seed_two_schools["u1"]
     response = client.post(
