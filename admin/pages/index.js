@@ -25,7 +25,7 @@ export default function AdminLogin() {
       const response=await fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000'}/auth/supabase/me`,{headers:{Authorization:`Bearer ${accessToken}`}});
       const profile=await response.json();
       if(!response.ok){await supabase.auth.signOut();throw new Error(profile.detail||'This account is not activated for Vortex platform access.');}
-      if(!profile.is_platform_admin){await supabase.auth.signOut();throw new Error('This account is not authorised for the Vortex Developer Portal.');}
+      if(!profile.is_platform_staff){await supabase.auth.signOut();throw new Error('This account is not authorised for the Vortex Developer Portal.');}
       router.push('/dashboard');
     }catch(err){setError(err.message);}finally{setLoading(false);}
   }
@@ -36,7 +36,7 @@ export default function AdminLogin() {
       <div className="admin-visual-foot">Secure administration workspace · Chikoro Digital</div>
     </section>
     <section className="admin-panel"><div className="admin-card">
-      <div className="admin-eyebrow">Vortex developer portal</div><h2>Welcome back</h2><p className="intro">Sign in with your authorised Vortex platform-owner credentials.</p>
+      <div className="admin-eyebrow">Vortex developer portal</div><h2>Welcome back</h2><p className="intro">Sign in with your authorised Vortex platform credentials.</p>
       {error&&<div className="admin-alert error" role="alert">{error}</div>}
       {notice&&<div className="admin-alert success" role="status">{notice}</div>}
       <form onSubmit={submit}>
@@ -46,7 +46,7 @@ export default function AdminLogin() {
         <button className="admin-resend" type="button" onClick={resendVerification} disabled={resending}>{resending?'Sending…':'Resend verification email'}</button>
       </form>
       <div className="admin-links"><span>Platform access is provisioned securely</span><a href="https://chikoro-digital.vercel.app">Student & parent portal</a></div>
-      <p className="admin-note">Access is restricted to explicitly provisioned Vortex platform operators. Never share your password or verification codes.</p>
+      <p className="admin-note">Access is restricted to explicitly provisioned Vortex platform staff. Your role determines which areas you can access. Never share your password or verification codes.</p>
     </div></section>
   </main>;
 }
