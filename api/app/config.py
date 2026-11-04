@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
     paynow_return_url: str = "http://localhost:3000/paynow/return"
     paynow_result_url: str = "http://localhost:8000/paynow/webhook"
+    # Optional one-time bootstrap for a fresh installation. Never commit credentials.
+    bootstrap_admin_email: Optional[str] = None
+    bootstrap_admin_password: Optional[str] = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
