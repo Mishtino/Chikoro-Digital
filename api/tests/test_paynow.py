@@ -745,3 +745,31 @@ def test_paynow_receipts_are_sequential_for_distinct_attempts_in_one_school(
         )
 
     assert receipt_numbers == ["RCP-00001", "RCP-00002"]
+
+
+def test_paynow_student_balance_aggregation_preserves_decimal_cents(db_session):
+    school = School(code="PN016", name="Decimal Checkout Balance")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-DECIMAL-1",
+        first_name="Decimal", last_name="Learner", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    db_session.add_all([
+        Invoice(
+            school_id=school.id, student_id=student.id,
+            invoice_number="PN-DEC-1", currency="USD",
+            total="0.10", status="issued",
+        ),
+        Invoice(
+            school_id=school.id, student_id=student.id,
+            invoice_number="PN-DEC-2", currency="USD",
+            total="0.20", status="issued",
+        ),
+    ])
+    db_session.commit()
+
+    from decimal import Decimal
+    assert paynow._student_usd_balance(db_session, school.id, student.id) == Decimal("0.30")
