@@ -47,7 +47,7 @@ export default function PortalLogin() {
           {error && <p className="auth-error" role="alert">{error}</p>}
           <button className="auth-submit" type="submit" disabled={loading}>{loading ? 'Signing in…' : 'Sign in to your portal'} <span aria-hidden="true">→</span></button>
         </form>
-        <p className="auth-foot">Your account is managed by your school. Contact your school administrator if you need access.</p>
+        <p className="auth-foot">Your account is managed by your school. Contact your school administrator if you need access.</p><p className="auth-foot"><a href="/portal/guardian-register">Parent or guardian? Activate your account</a></p>
       </section>
       <aside className="auth-aside">
         <div className="aside-orb" />
