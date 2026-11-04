@@ -207,6 +207,60 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
     }
 
 
+@router.get("/results")
+def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student portal only")
+    linked_students = db.query(Student).filter(
+        Student.portal_user_id == principal.user_id,
+        Student.school_id == principal.school_id,
+        Student.status == "active",
+    ).all()
+    if len(linked_students) != 1:
+        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
+    student = linked_students[0]
+    from app.models.results import Mark, Assessment, Subject
+    q = db.query(Mark, Assessment, Subject).join(
+        Assessment, Assessment.id == Mark.assessment_id
+    ).join(
+        Subject, Subject.id == Assessment.subject_id
+    ).filter(
+        Mark.school_id == student.school_id,
+        Assessment.school_id == student.school_id,
+        Subject.school_id == student.school_id,
+        Mark.student_id == student.id,
+        Mark.status == "published",
+    )
+    if term_id is not None:
+        from app.models.fee import Term
+        if db.query(Term).filter(Term.id == term_id, Term.school_id == student.school_id).first() is None:
+            raise HTTPException(status_code=404, detail="Term not found in this school")
+        q = q.filter(Assessment.term_id == term_id)
+    subjects = {}
+    for mark, assessment, subject in q.all():
+        subjects.setdefault(subject.name, []).append(
+            (assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight))
+        )
+    results = []
+    for name, entries in subjects.items():
+        total_weight = sum(weight for _, _, _, weight in entries)
+        weighted = sum((score / maximum) * weight for _, score, maximum, weight in entries) if total_weight else 0
+        results.append({
+            "subject": name,
+            "average": round(weighted / total_weight * 100, 2) if total_weight else 0,
+            "assessments": [
+                {"name": assessment_name, "score": score, "max": maximum}
+                for assessment_name, score, maximum, _ in entries
+            ],
+        })
+    return {
+        "student_id": student.id,
+        "student_number": student.student_number,
+        "name": f"{student.first_name} {student.last_name}",
+        "subjects": results,
+    }
+
+
 @router.get("/me")
 def portal_me(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     if principal.role != "student":
