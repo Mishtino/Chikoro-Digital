@@ -21,3 +21,20 @@ This is a verified snapshot from the 4 November 2026 review. It records gaps tha
 ## Current boundary
 
 The Vortex role separation in the application is implemented in FastAPI and the Vortex portal, but the role migration and owner bootstrap are not applied to the live project in this code change. The database connection role has not been changed. Do not treat this snapshot as a production-hardening sign-off.
+
+
+## Payment integrity controls reviewed on 4 November 2026
+
+- Manual payments and verified Paynow settlement serialize receipt allocation by locking the school row before locking invoice rows. The lock order is intentionally consistent across both flows.
+- Invoice balances count only non-void payments whose payment school, allocation school, invoice school, and learner identity agree. Malformed cross-school or cross-learner allocations do not reduce another learner's balance.
+- Paynow settlement rechecks the outstanding invoice/student balance while holding the relevant invoice locks. A stale checkout cannot create a payment that exceeds the remaining balance.
+- Receipt numbering uses the highest existing numeric receipt suffix rather than row count, so a deleted or missing receipt number is not reused. The school lock protects concurrent manual and Paynow receipt generation.
+- Webhook and reconciliation settlement share the same verified-payment recording helper. Provider confirmation must be hash-verified and match the exact local reference and amount.
+- Regression tests cover duplicate callbacks, cross-school invoice linkage, cross-learner allocation rows, stale balances, late cancellation callbacks, and receipt sequence gaps.
+
+## Financial schema work still pending
+
+- payments.reference does not yet have a database uniqueness constraint. Paynow attempts are serialized by row locks and use deterministic paynow:{attempt_id} references, but a database-level unique constraint is still the desired final integrity backstop.
+- payment_allocations does not yet have a database uniqueness or composite tenant-integrity constraint.
+- Before adding these constraints, run read-only duplicate/orphan/mismatch reports against a production snapshot, resolve any historical exceptions, prepare a forward-only Supabase migration, and verify it against staging. No production migration is authorized by this review.
+- Receipt uniqueness is already represented in the SQLAlchemy model as (school_id, receipt_number); verify that the live database has the matching constraint before relying on it as a production guarantee.
