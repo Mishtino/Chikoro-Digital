@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     debug: bool = False
     database_url: str = "sqlite:///./chikoro.db"
     secret_key: str = "change-me-in-production-please"
+    supabase_url: str = ""
     access_token_expire_minutes: int = 60 * 8
     admin_mfa_required: bool = True
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
