@@ -520,3 +520,59 @@ def test_student_paynow_rejects_active_and_inactive_duplicate_mappings(client, d
     assert response.status_code == 403
     assert response.json()["detail"] == "Student account is not uniquely linked"
     assert db_session.query(PaynowAttempt).count() == 0
+
+
+def test_verified_webhook_refuses_invoice_outside_attempt_tenant(
+    client, db_session, monkeypatch
+):
+    first_school = School(
+        code="PN011", name="Attempt Tenant",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    second_school = School(code="PN012", name="Foreign Invoice Tenant")
+    db_session.add_all([first_school, second_school])
+    db_session.flush()
+    student = Student(
+        school_id=first_school.id, student_number="PN-X1",
+        first_name="Tenant", last_name="Student", status="active",
+    )
+    foreign_student = Student(
+        school_id=second_school.id, student_number="PN-X2",
+        first_name="Foreign", last_name="Student", status="active",
+    )
+    db_session.add_all([student, foreign_student])
+    db_session.flush()
+    foreign_invoice = Invoice(
+        school_id=second_school.id, student_id=foreign_student.id,
+        invoice_number="PN-FOREIGN-INV", currency="USD", total=20,
+        status="issued",
+    )
+    db_session.add(foreign_invoice)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=first_school.id, student_id=student.id,
+        invoice_id=foreign_invoice.id, reference="PN-CROSS-TENANT",
+        amount=20, currency="USD", status="sent",
+        poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=tenant",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        paynow, "poll_transaction",
+        lambda _url, _key: {
+            "Status": "Paid", "reference": "PN-CROSS-TENANT",
+            "amount": "20.00", "hash_verified": True,
+        },
+    )
+
+    response = client.post("/paynow/webhook", data={"reference": attempt.reference})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "verified payment could not be matched to its invoice"
+    assert db_session.query(Payment).count() == 0
+    assert db_session.query(PaymentAllocation).count() == 0
+    assert db_session.query(Receipt).count() == 0
+    db_session.refresh(attempt)
+    assert attempt.status == "unverified"
