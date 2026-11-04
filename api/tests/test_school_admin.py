@@ -167,6 +167,7 @@ def test_school_lifecycle_rejects_unknown_status(client, seed_two_schools):
 def test_vortex_admin_can_update_school_profile_and_audit_changes(client, seed_two_schools, db_session):
     admin = seed_two_schools["admin"]
     school = seed_two_schools["s1"]
+    old_name = school.name
     principal = SupabasePrincipal(
         auth_user_id=uuid4(),
         user_id=admin.id,
@@ -192,7 +193,7 @@ def test_vortex_admin_can_update_school_profile_and_audit_changes(client, seed_t
         AuditLog.entity_id == str(school.id),
     ).order_by(AuditLog.id.desc()).first()
     assert audit is not None
-    assert audit.details["changes"]["name"] == {"from": school.name if school.name != "Updated Academy" else audit.details["changes"]["name"]["from"], "to": "Updated Academy"}
+    assert audit.details["changes"]["name"] == {"from": old_name, "to": "Updated Academy"}
     assert audit.details["changes"]["province"]["to"] == "Bulawayo"
 
 
