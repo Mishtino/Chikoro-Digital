@@ -254,3 +254,46 @@ def test_production_auth_rejects_unverified_supabase_token(client, db_session, m
     )
 
     assert response.status_code == 401
+
+
+
+def test_inactive_student_cannot_activate_portal_account(client, db_session):
+    from app import deps
+    from app.models.student import Student
+    from app.services.ids import hash_pin
+
+    school = School(code="ACT001", name="Activation School")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id,
+        student_number="ACT00100001",
+        first_name="Inactive",
+        last_name="Learner",
+        status="inactive",
+        activation_pin_hash=hash_pin("123456"),
+    )
+    db_session.add(student)
+    db_session.commit()
+
+    from app.main import app
+    app.dependency_overrides[deps.get_supabase_auth_identity] = lambda: {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "email": "learner@example.test",
+        "email_confirmed_at": "2026-11-04T08:00:00Z",
+    }
+
+    response = client.post(
+        "/portal/register",
+        json={
+            "school_code": "ACT001",
+            "student_number": "ACT00100001",
+            "pin": "123456",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only active learners can activate a portal account."
+    db_session.refresh(student)
+    assert student.portal_user_id is None
+    assert student.activation_pin_hash is not None
