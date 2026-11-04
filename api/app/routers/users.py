@@ -51,6 +51,8 @@ def create_user():
 
 @router.get("", response_model=List[UserOut])
 def list_users(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+        raise HTTPException(status_code=403, detail="School administrator access required")
     q = db.query(User)
     if principal.is_admin:
         if school_id is not None:
