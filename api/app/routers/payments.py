@@ -77,7 +77,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
             (invoice_balance(db, inv) for inv in selected_invoices),
             to_decimal(0),
         )
-        if to_decimal(payload.amount) > outstanding:
+        if amount > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
     else:
         student_invoices = db.query(Invoice).filter(
@@ -95,7 +95,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     payment = Payment(
         school_id=sid,
         student_id=payload.student_id,
-        amount=payload.amount,
+        amount=amount,
         currency=payload.currency.upper(),
         method=payload.method,
         reference=payload.reference,
