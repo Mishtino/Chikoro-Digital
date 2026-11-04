@@ -17,7 +17,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(200), nullable=False)
-    role = Column(String(50), nullable=False, default="staff")  # admin, owner, bursar, teacher, headmaster, student, parent
+    role = Column(String(50), nullable=False, default="staff")  # admin (Vortex owner), vortex_support, vortex_auditor, vortex_billing, owner, bursar, teacher, headmaster, student, parent
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)  # VortexTechPortal staff
