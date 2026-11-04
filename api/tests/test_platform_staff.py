@@ -21,7 +21,7 @@ def _owner(user):
 
 def _install_sqlite_profiles(db_session, monkeypatch):
     db_session.execute(sql_text("""
-        CREATE TABLE profiles (
+        CREATE TABLE IF NOT EXISTS profiles (
             id TEXT PRIMARY KEY,
             local_user_id INTEGER UNIQUE NOT NULL,
             role TEXT NOT NULL,
