@@ -58,6 +58,73 @@ def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
     return received == expected
 
 
+def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
+    """Create one payment/allocation/receipt atomically for a verified attempt.
+
+    The attempt row is locked by the caller. Locking the school serializes
+    receipt-number allocation across different checkouts in the same tenant.
+    """
+    ref_key = f"paynow:{attempt.id}"
+    existing = db.query(Payment).filter(Payment.reference == ref_key).first()
+    if existing is not None:
+        return True
+
+    school = db.query(School).filter(
+        School.id == attempt.school_id
+    ).with_for_update().first()
+    if school is None:
+        return False
+
+    invoice = None
+    if attempt.invoice_id is not None:
+        invoice = db.query(Invoice).filter(
+            Invoice.id == attempt.invoice_id
+        ).with_for_update().first()
+        if (
+            invoice is None
+            or invoice.school_id != attempt.school_id
+            or invoice.student_id != attempt.student_id
+            or invoice.currency != attempt.currency
+            or invoice.status == "void"
+        ):
+            return False
+
+    payment = Payment(
+        school_id=attempt.school_id,
+        student_id=attempt.student_id,
+        amount=attempt.amount,
+        currency=attempt.currency,
+        method="paynow",
+        reference=ref_key,
+    )
+    db.add(payment)
+    db.flush()
+
+    if invoice is not None:
+        balance = invoice_balance(db, invoice)
+        allocation = min(balance, __import__("decimal").Decimal(str(payment.amount)))
+        if allocation > 0:
+            db.add(PaymentAllocation(
+                school_id=payment.school_id,
+                payment_id=payment.id,
+                invoice_id=invoice.id,
+                amount=allocation,
+            ))
+    else:
+        from app.services.money import allocate_payment
+        allocate_payment(db, payment, None)
+
+    receipt_count = db.query(Receipt).filter(
+        Receipt.school_id == attempt.school_id
+    ).count()
+    db.add(Receipt(
+        school_id=attempt.school_id,
+        payment_id=payment.id,
+        receipt_number=f"RCP-{receipt_count + 1:05d}",
+    ))
+    return True
+
+
 def _student_usd_balance(db: Session, school_id: int, student_id: int) -> float:
     invoices = db.query(Invoice).filter(Invoice.school_id == school_id, Invoice.student_id == student_id, Invoice.currency == "USD", Invoice.status != "void").all()
     return sum(float(invoice_balance(db, invoice)) for invoice in invoices)
@@ -274,34 +341,12 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
         db.commit()
         return {"status": "payment confirmation hash could not be verified"}
     if status_val == "paid":
-        ref_key = f"paynow:{attempt.id}"
-        existing = db.query(Payment).filter(Payment.reference == ref_key).first()
-        if existing is None:
-            payment = Payment(
-                school_id=attempt.school_id,
-                student_id=attempt.student_id,
-                amount=attempt.amount,
-                currency=attempt.currency,
-                method="paynow",
-                reference=ref_key,
-            )
-            db.add(payment)
-            db.flush()
-            if attempt.invoice_id:
-                inv = db.get(Invoice, attempt.invoice_id)
-                if inv is not None:
-                    from app.services.money import invoice_balance
-                    from app.models.payment import PaymentAllocation
-                    bal = invoice_balance(db, inv)
-                    alloc = min(bal, __import__("decimal").Decimal(str(payment.amount)))
-                    if alloc > 0:
-                        db.add(PaymentAllocation(school_id=payment.school_id, payment_id=payment.id, invoice_id=inv.id, amount=alloc))
-            else:
-                from app.services.money import allocate_payment as alloc
-                alloc(db, payment, None)
-            count = db.query(Receipt).filter(Receipt.school_id == attempt.school_id).count()
-            db.add(Receipt(school_id=attempt.school_id, payment_id=payment.id, receipt_number=f"RCP-{count + 1:05d}"))
-        attempt.status = "paid"
+        if _record_verified_payment(db, attempt):
+            attempt.status = "paid"
+        else:
+            attempt.status = "unverified"
+            db.commit()
+            return {"status": "verified payment could not be matched to its invoice"}
     elif status_val in ("cancelled", "failed", "disputed"):
         attempt.status = status_val
     else:
@@ -353,34 +398,10 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             updated += 1
             continue
         if st == "paid" and att.status != "paid":
-            ref_key = f"paynow:{att.id}"
-            existing = db.query(Payment).filter(Payment.reference == ref_key).first()
-            if existing is None:
-                payment = Payment(
-                    school_id=att.school_id,
-                    student_id=att.student_id,
-                    amount=att.amount,
-                    currency=att.currency,
-                    method="paynow",
-                    reference=ref_key,
-                )
-                db.add(payment)
-                db.flush()
-                if att.invoice_id:
-                    inv = db.get(Invoice, att.invoice_id)
-                    if inv is not None:
-                        from app.services.money import invoice_balance
-                        from app.models.payment import PaymentAllocation
-                        bal = invoice_balance(db, inv)
-                        alloc_amt = min(bal, __import__("decimal").Decimal(str(payment.amount)))
-                        if alloc_amt > 0:
-                            db.add(PaymentAllocation(school_id=payment.school_id, payment_id=payment.id, invoice_id=inv.id, amount=alloc_amt))
-                else:
-                    from app.services.money import allocate_payment as alloc
-                    alloc(db, payment, None)
-                count = db.query(Receipt).filter(Receipt.school_id == att.school_id).count()
-                db.add(Receipt(school_id=att.school_id, payment_id=payment.id, receipt_number=f"RCP-{count + 1:05d}"))
-            att.status = "paid"
+            if _record_verified_payment(db, att):
+                att.status = "paid"
+            else:
+                att.status = "unverified"
             updated += 1
         elif st in ("cancelled", "failed"):
             att.status = st
