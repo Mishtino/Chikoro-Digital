@@ -154,8 +154,8 @@ def issue_guardian_activation_pin(
     ).with_for_update().first()
     if contact is None:
         raise HTTPException(status_code=404, detail="Guardian contact not found")
-    if not contact.email or not contact.verified_email:
-        raise HTTPException(status_code=409, detail="Verify this guardian's email address with the school before issuing an activation PIN")
+    if not contact.email:
+        raise HTTPException(status_code=409, detail="A guardian email address must be recorded before issuing an activation PIN")
     if contact.guardian_activated_at is not None:
         raise HTTPException(status_code=409, detail="This contact has already activated a guardian account")
 
@@ -193,8 +193,8 @@ def guardian_register(
     ).with_for_update().first()
     if contact is None:
         raise HTTPException(status_code=404, detail="Guardian contact not found")
-    if not contact.verified_email or not contact.email or contact.email.strip().lower() != email:
-        raise HTTPException(status_code=403, detail="This verified email does not match the guardian contact held by the school.")
+    if not contact.email or contact.email.strip().lower() != email:
+        raise HTTPException(status_code=403, detail="Your confirmed email does not match the guardian contact held by the school.")
     if contact.guardian_activated_at is not None or not contact.guardian_activation_pin_hash:
         raise HTTPException(status_code=409, detail="This guardian activation PIN is unavailable or has already been used.")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -253,6 +253,7 @@ def guardian_register(
         verified_at=now,
     )
     db.add(link)
+    contact.verified_email = True
     contact.guardian_activated_at = now
     contact.guardian_activation_pin_hash = None
     contact.guardian_activation_expires_at = None
