@@ -85,6 +85,8 @@ def activate_parent_account(
 ):
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Supabase bearer token required")
+    if len(payload.pin) != 8 or not payload.pin.isdigit():
+        raise HTTPException(status_code=422, detail="Activation PIN must contain exactly eight digits")
     claims = verify_supabase_access_token(credentials.credentials)
     auth_id = claims["sub"]
     auth_user = db.execute(text("""
