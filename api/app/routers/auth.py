@@ -3,6 +3,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal, bearer
@@ -141,6 +142,11 @@ def activate_parent_account(
         or not existing_profile["is_active"]
     ):
         raise HTTPException(status_code=409, detail="This Supabase identity is already linked to another account")
+    other_profile = db.execute(text("""
+        SELECT id FROM public.profiles WHERE local_user_id = :local_user_id AND id <> CAST(:auth_id AS uuid) LIMIT 1
+    """), {"local_user_id": local_user.id, "auth_id": auth_id}).first()
+    if other_profile is not None:
+        raise HTTPException(status_code=409, detail="This local account is already linked to another Supabase identity")
     if not existing_profile:
         db.execute(text("""
             INSERT INTO public.profiles
