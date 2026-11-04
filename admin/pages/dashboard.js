@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import { getSupabaseBrowserClient } from '../lib/supabase';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -9,19 +10,34 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [schoolForm, setSchoolForm] = useState({ code: '', name: '', province: '' });
   const [creatingSchool, setCreatingSchool] = useState(false);
-  const [adminForm, setAdminForm] = useState({ school_id: '', email: '', full_name: '', password: '', role: 'owner' });
-  const [creatingAdmin, setCreatingAdmin] = useState(false);
-  const [adminMsg, setAdminMsg] = useState('');
+  async function getAdminToken() {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.access_token) {
+      router.replace('/');
+      return null;
+    }
+    const token = data.session.access_token;
+    const identity = await fetch(`${API}/auth/supabase/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const profile = await identity.json().catch(() => ({}));
+    if (!identity.ok || !profile.is_admin) {
+      await supabase.auth.signOut();
+      router.replace('/');
+      throw new Error('This account is not authorised for the Vortex control centre.');
+    }
+    return token;
+  }
 
   async function load() {
-    const token = localStorage.getItem('token');
-    if (!token) { router.push('/'); return; }
     try {
+      const token = await getAdminToken();
+      if (!token) return;
       const res = await fetch(`${API}/schools`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to load schools');
       setSchools(data);
-      if (!adminForm.school_id && data.length) setAdminForm((f) => ({ ...f, school_id: data[0].id }));
     } catch (e) { setError(e.message); }
   }
 
@@ -31,7 +47,8 @@ export default function Dashboard() {
     e.preventDefault();
     setCreatingSchool(true); setError('');
     try {
-      const token = localStorage.getItem('token');
+      const token = await getAdminToken();
+      if (!token) return;
       const res = await fetch(`${API}/schools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -45,23 +62,7 @@ export default function Dashboard() {
     finally { setCreatingSchool(false); }
   }
 
-  async function createAdmin(e) {
-    e.preventDefault();
-    setCreatingAdmin(true); setError(''); setAdminMsg('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...adminForm, school_id: Number(adminForm.school_id) }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Create admin failed');
-      setAdminMsg(`Created ${data.email} (${data.role})`);
-      setAdminForm((f) => ({ ...f, email: '', full_name: '', password: '' }));
-    } catch (e) { setError(e.message); }
-    finally { setCreatingAdmin(false); }
-  }
+
 
   return (
     <div className="container">
@@ -76,23 +77,8 @@ export default function Dashboard() {
           <button type="submit" disabled={creatingSchool}>{creatingSchool ? 'Creating...' : 'Create school'}</button>
         </form>
 
-        <h2>Create school admin</h2>
-        {adminMsg && <p style={{ color: 'green' }}>{adminMsg}</p>}
-        <form onSubmit={createAdmin} style={{ display: 'grid', gap: '.5rem', marginBottom: '1.5rem' }}>
-          <select value={adminForm.school_id} onChange={(e) => setAdminForm({ ...adminForm, school_id: e.target.value })}>
-            {schools.map((s) => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
-          </select>
-          <input placeholder="Admin full name" value={adminForm.full_name} onChange={(e) => setAdminForm({ ...adminForm, full_name: e.target.value })} />
-          <input type="email" placeholder="Admin email" value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} />
-          <input type="password" placeholder="Admin password" value={adminForm.password} onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })} />
-          <select value={adminForm.role} onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}>
-            <option value="owner">Owner</option>
-            <option value="bursar">Bursar</option>
-            <option value="headmaster">Headmaster</option>
-            <option value="teacher">Teacher</option>
-          </select>
-          <button type="submit" disabled={creatingAdmin}>{creatingAdmin ? 'Creating...' : 'Create admin'}</button>
-        </form>
+        <h2>Staff accounts</h2>
+        <p>New staff accounts will be provisioned through verified Supabase invitations. Legacy local-password account creation is disabled to protect account ownership and school access.</p>
 
         <h2>Schools</h2>
         <table>
@@ -103,7 +89,7 @@ export default function Dashboard() {
             ))}
           </tbody>
         </table>
-        <p style={{ marginTop: '1rem' }}><a href="#" onClick={() => { localStorage.removeItem('token'); router.push('/'); }}>Log out</a></p>
+        <p style={{ marginTop: '1rem' }}><a href="#" onClick={async (event) => { event.preventDefault(); await getSupabaseBrowserClient().auth.signOut(); router.push('/'); }}>Log out</a></p>
       </div>
     </div>
   );
