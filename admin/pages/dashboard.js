@@ -241,7 +241,6 @@ export default function Dashboard() {
               <select id="staff-role" value={staffInvite.role} onChange={e => setStaffInvite({ ...staffInvite, role: e.target.value })}>
                 <option value="vortex_support">Support — school directory read-only</option>
                 <option value="vortex_auditor">Auditor — audit feed read-only</option>
-                <option value="vortex_billing">Billing — reserved until billing module is enabled</option>
               </select>
               <button className="admin-button" type="submit" disabled={invitingStaff}>{invitingStaff ? 'Sending invitation…' : 'Send staff invitation'}</button>
             </form>
