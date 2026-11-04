@@ -9,6 +9,19 @@ def to_decimal(value) -> Decimal:
     return Decimal(str(value)) if value is not None else Decimal("0")
 
 
+def is_valid_payment_amount(value) -> bool:
+    """Payments are stored to two decimal places; reject silent rounding."""
+    try:
+        amount = to_decimal(value)
+        return (
+            amount.is_finite()
+            and amount > 0
+            and amount == amount.quantize(Decimal("0.01"))
+        )
+    except Exception:
+        return False
+
+
 def invoice_paid_amount(db: Session, invoice_id: int, currency: str, school_id: int) -> Decimal:
     total = (
         db.query(func.coalesce(func.sum(PaymentAllocation.amount), 0))
