@@ -39,7 +39,7 @@ def student_balance(db: Session, school_id: int, student_id: int, currency: str 
     total_invoiced = sum((to_decimal(i.total) for i in invoices), Decimal("0"))
     paid = Decimal("0")
     for inv in invoices:
-        paid += invoice_paid_amount(db, inv.id, inv.currency)
+        paid += invoice_paid_amount(db, inv.id, inv.currency, inv.school_id)
     return total_invoiced - paid
 
 
