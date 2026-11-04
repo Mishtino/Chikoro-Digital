@@ -95,7 +95,7 @@ def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[
     if subject_id is not None:
         q = q.filter(Assessment.subject_id == subject_id)
     if term_id is not None:
-        if db.query(Term).filter(Term.id == term_id, Term.school_id == student.school_id).first() is None:
+        if db.query(Term).filter(Term.id == term_id, Term.school_id == sid).first() is None:
             raise HTTPException(status_code=404, detail="Term not found in this school")
         q = q.filter(Assessment.term_id == term_id)
     return q.order_by(Assessment.id).all()
@@ -179,6 +179,8 @@ def report_card(student_id: int, term_id: Optional[int] = None, principal: Supab
         raise HTTPException(status_code=403, detail="Access denied")
     q = db.query(Mark, Assessment, Subject).join(Assessment, Assessment.id == Mark.assessment_id).join(Subject, Subject.id == Assessment.subject_id).filter(Mark.school_id == student.school_id, Assessment.school_id == student.school_id, Subject.school_id == student.school_id, Mark.student_id == student_id, Mark.status == "published")
     if term_id is not None:
+        if db.query(Term).filter(Term.id == term_id, Term.school_id == student.school_id).first() is None:
+            raise HTTPException(status_code=404, detail="Term not found in this school")
         q = q.filter(Assessment.term_id == term_id)
     rows = q.all()
     # aggregate per subject
