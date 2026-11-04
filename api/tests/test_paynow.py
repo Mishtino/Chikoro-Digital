@@ -304,8 +304,16 @@ def test_reconcile_retries_unverified_attempt_until_hash_is_verified(
     )
     db_session.add(student)
     db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PN-RETRY-INV", currency="USD", total=15,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
     attempt = PaynowAttempt(
-        school_id=school.id, student_id=student.id, reference="PN-RETRY-1",
+        school_id=school.id, student_id=student.id, invoice_id=invoice.id,
+        reference="PN-RETRY-1",
         amount=15, currency="USD", status="sent",
         poll_url="https://paynow.example.test/poll/retry",
     )
