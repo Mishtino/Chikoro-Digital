@@ -107,7 +107,8 @@ export default function ParentPortal() {
       {fees && <section className="card" style={{ marginTop: 18 }}>
         <h2>Fee statement</h2>
         <p><strong>{fees.name}</strong> · {fees.student_number}</p>
-        <p style={{ fontSize: 22, fontWeight: 700 }}>Outstanding balance: {Number(fees.total_balance).toFixed(2)} USD</p>
+        <p style={{ fontSize: 22, fontWeight: 700 }}>Outstanding USD balance: {Number(fees.total_balance).toFixed(2)} USD</p>
+        {Object.entries(fees.balances_by_currency || {}).filter(([currency]) => currency !== 'USD').map(([currency, balance]) => <p key={currency}>Outstanding {currency} balance: {Number(balance).toFixed(2)}</p>)}
         <button type="button" onClick={payFees} disabled={paying || Number(fees.total_balance) <= 0}>{paying ? 'Opening secure checkout…' : 'Pay fees securely'}</button>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
