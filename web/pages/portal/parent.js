@@ -9,6 +9,9 @@ export default function ParentPortal() {
   const [selectedId, setSelectedId] = useState('');
   const [fees, setFees] = useState(null);
   const [results, setResults] = useState(null);
+  const [terms, setTerms] = useState([]);
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [termsLoaded, setTermsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [paying, setPaying] = useState(false);
@@ -44,27 +47,56 @@ export default function ParentPortal() {
       if (!selectedId) {
         setFees(null);
         setResults(null);
+        setTerms([]);
+        setSelectedTermId('');
+        setTermsLoaded(false);
         return;
       }
       setError('');
       setFees(null);
       setResults(null);
+      setTerms([]);
+      setSelectedTermId('');
+      setTermsLoaded(false);
       try {
-        const [feeData, resultData] = await Promise.all([
+        const [feeData, termData] = await Promise.all([
           api('/portal/parent/children/' + selectedId + '/fee-status'),
-          api('/portal/parent/children/' + selectedId + '/report-card'),
+          api('/portal/parent/children/' + selectedId + '/terms'),
         ]);
         if (active) {
           setFees(feeData);
-          setResults(resultData);
+          const availableTerms = termData.terms || [];
+          setTerms(availableTerms);
+          setSelectedTermId(availableTerms.length ? String(availableTerms[0].id) : '');
+          setTermsLoaded(true);
         }
       } catch (err) {
-        if (active) setError(err.message);
+        if (active) {
+          setError(err.message);
+          setTermsLoaded(true);
+        }
       }
     }
     loadChild();
     return () => { active = false; };
   }, [selectedId]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadResults() {
+      if (!selectedId || !termsLoaded) return;
+      setResults(null);
+      try {
+        const query = selectedTermId ? '?term_id=' + encodeURIComponent(selectedTermId) : '';
+        const resultData = await api('/portal/parent/children/' + selectedId + '/report-card' + query);
+        if (active) setResults(resultData);
+      } catch (err) {
+        if (active) setError(err.message);
+      }
+    }
+    loadResults();
+    return () => { active = false; };
+  }, [selectedId, selectedTermId, termsLoaded]);
 
   async function payFees() {
     if (!selectedId) return;
@@ -101,6 +133,12 @@ export default function ParentPortal() {
           <select id="parent-child" value={selectedId} onChange={event => setSelectedId(event.target.value)} style={{ width: '100%', maxWidth: 420, padding: 12, borderRadius: 8 }}>
             {children.map(child => <option key={child.id} value={child.id}>{child.name} · {child.student_number}{child.form ? ' · ' + child.form : ''}</option>)}
           </select>
+          {!!terms.length && <div style={{ marginTop: 16 }}>
+            <label htmlFor="parent-term" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>Report-card term</label>
+            <select id="parent-term" value={selectedTermId} onChange={event => setSelectedTermId(event.target.value)} style={{ width: '100%', maxWidth: 420, padding: 12, borderRadius: 8 }}>
+              {terms.map(term => <option key={term.id} value={String(term.id)}>{term.name} · {term.academic_year}{term.is_current ? ' · Current' : ''}</option>)}
+            </select>
+          </div>}
         </div>}
       </section>
 
