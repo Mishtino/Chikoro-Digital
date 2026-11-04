@@ -76,6 +76,7 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
         return False
 
     invoice = None
+    from decimal import Decimal
     if attempt.invoice_id is not None:
         invoice = db.query(Invoice).filter(
             Invoice.id == attempt.invoice_id
@@ -87,6 +88,23 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
             or invoice.currency != attempt.currency
             or invoice.status == "void"
         ):
+            return False
+        # Multiple checkout attempts can be created against the same balance.
+        # Recheck under the invoice lock before accepting the provider payment.
+        if Decimal(str(attempt.amount)) > invoice_balance(db, invoice):
+            return False
+    else:
+        student_invoices = db.query(Invoice).filter(
+            Invoice.school_id == attempt.school_id,
+            Invoice.student_id == attempt.student_id,
+            Invoice.currency == attempt.currency,
+            Invoice.status != "void",
+        ).order_by(Invoice.id).with_for_update().all()
+        outstanding = sum(
+            (invoice_balance(db, item) for item in student_invoices),
+            Decimal("0"),
+        )
+        if Decimal(str(attempt.amount)) > outstanding:
             return False
 
     payment = Payment(
