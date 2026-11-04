@@ -27,7 +27,15 @@ class SchoolCreate(BaseModel):
             raise ValueError("School code may contain only letters, numbers and hyphens")
         return normalized
 
-    @field_validator("name", "province", "plan")
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("School name cannot be empty")
+        return normalized
+
+    @field_validator("province", "plan")
     @classmethod
     def trim_optional_text(cls, value):
         if value is None:
