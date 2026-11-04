@@ -24,7 +24,8 @@ export default function PortalFees() {
       setError(e.message);
     }
   }
-  if (!data) return <div className="container"><div className="card">Loading...</div></div>;
+  if (error) return <div className="container"><div className="card"><h1>Unable to load your fee statement</h1><p role="alert">{error}</p><button onClick={() => router.push('/portal/login')}>Return to sign in</button></div></div>;
+  if (!data) return <div className="container"><div className="card" role="status">Loading your secure fee statement…</div></div>;
   return (
     <div className="container">
       <div className="card">
