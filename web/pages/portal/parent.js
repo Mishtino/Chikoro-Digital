@@ -11,6 +11,7 @@ export default function ParentPortal() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +66,20 @@ export default function ParentPortal() {
     return () => { active = false; };
   }, [selectedId]);
 
+  async function payFees() {
+    if (!selectedId) return;
+    setPaying(true);
+    setError('');
+    try {
+      const response = await api('/paynow/initiate', { method: 'POST', body: JSON.stringify({ student_id: Number(selectedId) }) });
+      if (!response.browser_url) throw new Error('The payment provider did not return a checkout link.');
+      window.location.href = response.browser_url;
+    } catch (err) {
+      setError(err.message);
+      setPaying(false);
+    }
+  }
+
   async function logout() {
     await getSupabaseBrowserClient().auth.signOut();
     router.replace('/portal/login');
@@ -93,6 +108,7 @@ export default function ParentPortal() {
         <h2>Fee statement</h2>
         <p><strong>{fees.name}</strong> · {fees.student_number}</p>
         <p style={{ fontSize: 22, fontWeight: 700 }}>Outstanding balance: {Number(fees.total_balance).toFixed(2)} USD</p>
+        <button type="button" onClick={payFees} disabled={paying || Number(fees.total_balance) <= 0}>{paying ? 'Opening secure checkout…' : 'Pay fees securely'}</button>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th align="left">Invoice</th><th align="right">Total</th><th align="right">Balance</th></tr></thead>
