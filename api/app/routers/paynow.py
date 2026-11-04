@@ -149,8 +149,10 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: Principal = Depe
     db.add(attempt)
     db.flush()
 
-    return_url = payload.return_url or settings.paynow_return_url
-    result_url = payload.result_url or settings.paynow_result_url
+    # Callback destinations are controlled by deployment configuration, not by
+    # an authenticated caller, so payment notifications cannot be redirected.
+    return_url = settings.paynow_return_url
+    result_url = settings.paynow_result_url
 
     resp = initiate_transaction(
         integration_id=school.paynow_integration_id,
