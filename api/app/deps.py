@@ -27,12 +27,12 @@ class Principal:
 
 def get_supabase_auth_identity(token: str = Depends(oauth2_scheme)) -> dict:
     """Verify bearer token with Supabase Auth and return its verified identity."""
-    if not settings.supabase_url or not settings.supabase_anon_key:
+    if not settings.supabase_url or not settings.supabase_publishable_key:
         raise HTTPException(status_code=503, detail="Supabase Auth verification is not configured")
     try:
         response = httpx.get(
             f"{settings.supabase_url.rstrip('/')}/auth/v1/user",
-            headers={"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}"},
+            headers={"apikey": settings.supabase_publishable_key, "Authorization": f"Bearer {token}"},
             timeout=5.0,
         )
         if response.status_code != 200:
