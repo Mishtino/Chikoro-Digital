@@ -10,6 +10,7 @@ from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.payment import Invoice, InvoiceLine, Payment, PaymentAllocation, Receipt
 from app.models.student import Student
+from app.models.school import School
 from app.services.money import allocate_payment, invoice_balance, student_balance, to_decimal
 from app.services.audit import write_audit
 
@@ -46,6 +47,10 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     student = db.get(Student, payload.student_id)
     if student is None or student.school_id != sid:
         raise HTTPException(status_code=404, detail="Student not found")
+    # Consistent lock order with Paynow settlement: school first, then invoices.
+    school = db.query(School).filter(School.id == sid).with_for_update().first()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
     if not math.isfinite(payload.amount) or payload.amount <= 0:
         raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
     currency = payload.currency.upper()
@@ -55,20 +60,32 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         requested_ids = set(payload.invoice_ids)
         if len(requested_ids) != len(payload.invoice_ids):
             raise HTTPException(status_code=422, detail="Duplicate invoice IDs are not allowed")
-        matched = db.query(Invoice).filter(
+        selected_invoices = db.query(Invoice).filter(
             Invoice.id.in_(requested_ids),
             Invoice.school_id == sid,
             Invoice.student_id == payload.student_id,
             Invoice.currency == currency,
             Invoice.status != "void",
-        ).count()
-        if matched != len(requested_ids):
+        ).order_by(Invoice.id).with_for_update().all()
+        if len(selected_invoices) != len(requested_ids):
             raise HTTPException(status_code=404, detail="One or more invoices do not belong to this student and school")
-        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id, Invoice.currency == payload.currency.upper(), Invoice.status != "void").all()), to_decimal(0))
+        outstanding = sum(
+            (invoice_balance(db, inv) for inv in selected_invoices),
+            to_decimal(0),
+        )
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
     else:
-        outstanding = student_balance(db, sid, payload.student_id, currency)
+        student_invoices = db.query(Invoice).filter(
+            Invoice.school_id == sid,
+            Invoice.student_id == payload.student_id,
+            Invoice.currency == currency,
+            Invoice.status != "void",
+        ).order_by(Invoice.id).with_for_update().all()
+        outstanding = sum(
+            (invoice_balance(db, inv) for inv in student_invoices),
+            to_decimal(0),
+        )
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
     payment = Payment(
