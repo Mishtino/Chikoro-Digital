@@ -69,6 +69,9 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         raise HTTPException(status_code=404, detail="School not found")
 
     portal_email = payload.student_email.strip().lower() if payload.student_email else None
+    guardian_email = payload.guardian_email.strip().lower() if payload.guardian_email else None
+    if guardian_email and not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", guardian_email):
+        raise HTTPException(status_code=422, detail="Guardian email address is invalid")
     if portal_email:
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", portal_email):
             raise HTTPException(status_code=422, detail="Student email address is invalid")
@@ -111,7 +114,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
             student_id=student.id,
             name=payload.guardian_name or "Guardian",
             phone=payload.guardian_phone,
-            email=payload.guardian_email,
+            email=guardian_email,
             is_primary=True,
         )
         db.add(contact)
