@@ -105,7 +105,10 @@ def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depen
     sid = _sid(principal, payload.school_id)
     if not math.isfinite(payload.amount) or payload.amount <= 0:
         raise HTTPException(status_code=422, detail="Fee amount must be a finite positive value")
-    item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=payload.currency, applies_to_form=payload.applies_to_form)
+    currency = payload.currency.upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
+    item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=currency, applies_to_form=payload.applies_to_form)
     db.add(item)
     db.commit()
     db.refresh(item)
