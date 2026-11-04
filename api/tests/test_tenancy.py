@@ -18,7 +18,7 @@ def test_tenancy_isolation(client, seed_two_schools):
     data = seed_two_schools
     owner_one = _principal(data["u1"], data["s1"].id)
     owner_two = _principal(data["u2"], data["s2"].id)
-    platform_admin = _principal(data["admin"], None, role="admin", is_admin=True)
+    platform_admin = _principal(data["admin"], None, role="vortex_admin", is_admin=True)
 
     app.dependency_overrides[get_supabase_principal] = lambda: owner_one
 
