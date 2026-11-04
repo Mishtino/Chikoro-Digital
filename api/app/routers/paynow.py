@@ -200,7 +200,7 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
     polled = {}
     if attempt.poll_url:
         polled = poll_transaction(attempt.poll_url, integration_key)
-    attempt.hash_verified = bool(ping_verified or polled.get("hash_verified"))
+    attempt.hash_verified = bool(polled.get("hash_verified"))
 
     status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
 
