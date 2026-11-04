@@ -56,6 +56,24 @@ def _parent_student_ids(principal: SupabasePrincipal, db: Session) -> list[int]:
     return [row[0] for row in rows]
 
 
+def _student_portal_student(principal: SupabasePrincipal, db: Session) -> Student:
+    """Resolve exactly one learner record, including inactive historical mappings."""
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student portal only")
+    if principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School context required")
+    linked_students = db.query(Student).filter(
+        Student.portal_user_id == principal.user_id,
+        Student.school_id == principal.school_id,
+    ).all()
+    if len(linked_students) != 1:
+        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
+    student = linked_students[0]
+    if student.status != "active":
+        raise HTTPException(status_code=403, detail="Student account is inactive")
+    return student
+
+
 def _parent_student(principal: SupabasePrincipal, student_id: int, db: Session) -> Student:
     allowed_ids = _parent_student_ids(principal, db)
     if student_id not in allowed_ids:
@@ -209,17 +227,7 @@ def portal_register():
 def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     if principal.role != "student":
         raise HTTPException(status_code=403, detail="Portal users only")
-    # Require one unambiguous, active learner mapping in the same school
-    # tenant as the trusted Supabase profile.
-    linked_students = db.query(Student).filter(
-        Student.portal_user_id == principal.user_id,
-        Student.school_id == principal.school_id,
-    ).all()
-    if len(linked_students) != 1:
-        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
-    student = linked_students[0]
-    if student.status != "active":
-        raise HTTPException(status_code=403, detail="Student account is inactive")
+    student = _student_portal_student(principal, db)
     invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id, Invoice.status != "void").order_by(Invoice.id).all()
     items = []
     for inv in invoices:
@@ -247,16 +255,7 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
 @router.get("/terms")
 def student_published_terms(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     """Return academic terms containing published marks for the authenticated learner only."""
-    if principal.role != "student":
-        raise HTTPException(status_code=403, detail="Student portal only")
-    student_rows = db.query(Student).filter(
-        Student.portal_user_id == principal.user_id,
-        Student.school_id == principal.school_id,
-        Student.status == "active",
-    ).all()
-    if len(student_rows) != 1:
-        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
-    student = student_rows[0]
+    student = _student_portal_student(principal, db)
     from app.models.results import Mark, Assessment
     from app.models.fee import Term
 
@@ -282,16 +281,7 @@ def student_published_terms(principal: SupabasePrincipal = Depends(get_supabase_
 
 @router.get("/results")
 def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if principal.role != "student":
-        raise HTTPException(status_code=403, detail="Student portal only")
-    linked_students = db.query(Student).filter(
-        Student.portal_user_id == principal.user_id,
-        Student.school_id == principal.school_id,
-        Student.status == "active",
-    ).all()
-    if len(linked_students) != 1:
-        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
-    student = linked_students[0]
+    student = _student_portal_student(principal, db)
     from app.models.results import Mark, Assessment, Subject
     q = db.query(Mark, Assessment, Subject).join(
         Assessment, Assessment.id == Mark.assessment_id
