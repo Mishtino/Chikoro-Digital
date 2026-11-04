@@ -127,7 +127,12 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
         raise HTTPException(status_code=404, detail="Term not found in this school")
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one fee item is required")
+    currencies = set()
     for item in payload.items:
+        item_currency = str(item.get("currency", "USD")).upper()
+        if len(item_currency) != 3 or not item_currency.isalpha():
+            raise HTTPException(status_code=422, detail="Fee currency must be a three-letter code")
+        currencies.add(item_currency)
         try:
             item_amount = float(item.get("amount", 0))
         except (TypeError, ValueError):
@@ -137,6 +142,8 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
         fee_item_id = item.get("fee_item_id")
         if fee_item_id is not None and db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first() is None:
             raise HTTPException(status_code=404, detail="Fee item not found in this school")
+    if len(currencies) != 1:
+        raise HTTPException(status_code=422, detail="A fee structure must use one currency")
     fs = FeeStructure(school_id=sid, term_id=payload.term_id, form=payload.form, name=payload.name)
     db.add(fs)
     db.flush()
@@ -147,7 +154,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
             fee_item_id=it.get("fee_item_id"),
             description=it.get("description", "Fee"),
             amount=it["amount"],
-            currency=it.get("currency", "USD"),
+            currency=str(it.get("currency", "USD")).upper(),
         )
         db.add(line)
     db.commit()
