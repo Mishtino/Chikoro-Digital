@@ -15,8 +15,7 @@ class Settings(BaseSettings):
     paynow_return_url: str = "http://localhost:3000/paynow/return"
     paynow_result_url: str = "http://localhost:8000/paynow/webhook"
     supabase_url: Optional[str] = None
-    supabase_anon_key: Optional[str] = None
-    supabase_service_role_key: Optional[str] = None
+    supabase_publishable_key: Optional[str] = None
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[str] = None
 
