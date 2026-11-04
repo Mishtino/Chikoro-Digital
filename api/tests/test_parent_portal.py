@@ -83,3 +83,72 @@ def test_parent_terms_only_include_published_terms_for_selected_learner(client, 
         "academic_year": "2026",
         "is_current": True,
     }]
+
+
+
+def test_parent_student_ids_rejects_non_parent_and_missing_school_context():
+    from fastapi import HTTPException
+    import pytest
+
+    class UnusedDB:
+        def execute(self, *_args, **_kwargs):
+            pytest.fail("Database must not be queried for an invalid parent context")
+
+    non_parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9002, school_id=1,
+        role="student", is_admin=False,
+    )
+    with pytest.raises(HTTPException) as role_error:
+        portal._parent_student_ids(non_parent, UnusedDB())
+    assert role_error.value.status_code == 403
+
+    no_school = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9003, school_id=None,
+        role="parent", is_admin=False,
+    )
+    with pytest.raises(HTTPException) as school_error:
+        portal._parent_student_ids(no_school, UnusedDB())
+    assert school_error.value.status_code == 403
+
+
+def test_parent_student_ids_require_active_verified_same_school_guardian_link():
+    from uuid import uuid4
+
+    profile_id = uuid4()
+    school_id = 42
+    principal = SupabasePrincipal(
+        auth_user_id=profile_id, user_id=9004, school_id=school_id,
+        role="parent", is_admin=False,
+    )
+
+    class Result:
+        def all(self):
+            return [(123,), (456,)]
+
+    class RecordingDB:
+        statement = None
+        params = None
+
+        def execute(self, statement, params):
+            self.statement = str(statement).lower()
+            self.params = params
+            return Result()
+
+    db = RecordingDB()
+    assert portal._parent_student_ids(principal, db) == [123, 456]
+    assert db.params == {
+        "profile_id": str(profile_id),
+        "school_id": school_id,
+    }
+    # Guard the authorization query against accidental removal of any
+    # tenant, active-link, verification, or active-learner restriction.
+    for required_clause in (
+        "gl.profile_id = :profile_id",
+        "gl.school_id = :school_id",
+        "gl.is_active = true",
+        "gl.verified_at is not null",
+        "s.status = 'active'",
+        "c.school_id = gl.school_id",
+        "s.school_id = c.school_id",
+    ):
+        assert required_clause in db.statement
