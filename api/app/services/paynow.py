@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import urllib.parse
 
 import httpx
@@ -23,7 +24,7 @@ def verify_hash(values: dict, integration_key: str) -> bool:
     # remove hash key for calc
     calc_values = {k: v for k, v in values.items() if str(k).upper() != "HASH"}
     expected = generate_hash(calc_values, integration_key)
-    return received.upper() == expected
+    return hmac.compare_digest(received.upper(), expected)
 
 
 def _parse_response(text: str) -> dict:
