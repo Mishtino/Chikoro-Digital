@@ -18,3 +18,9 @@
 .audit-row small, .audit-row time { color: #718096; font-size: 12px; }
 .audit-row time { white-space: nowrap; }
 @media (max-width: 700px) { .audit-row { grid-template-columns: 1fr; gap: 7px; } .audit-row time { white-space: normal; } }
+
+
+.school-edit-form { display: grid; gap: 9px; padding: 16px; margin: 14px 0; border: 1px solid #dfe6f0; border-radius: 12px; background: #f8faff; }
+.school-edit-form h2 { margin: 0; }
+.school-edit-form label { color: #52627a; font-size: 12px; font-weight: 700; }
+.school-edit-form input { width: 100%; padding: 10px 12px; border: 1px solid #d7deea; border-radius: 8px; background: #fff; color: #1e293b; }
