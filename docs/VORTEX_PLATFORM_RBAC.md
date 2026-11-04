@@ -37,7 +37,7 @@ allow-list. It is committed but **has not been applied** to the live database.
 
 Owner-only Vortex staff invitations are implemented at
 `POST /platform/staff/invitations`; `GET /platform/staff` lists linked
-platform identities. Only the `vortex_admin` owner can use either endpoint.
+platform identities. Only the `vortex_admin` owner can use these endpoints. The owner can disable or re-enable support and auditor accounts with `PATCH /platform/staff/{auth_user_id}/status`; both the trusted profile and local user are updated together, and each change is audited. The owner account and reserved billing role cannot be changed through this lifecycle endpoint. Disabled accounts are rejected by the API profile resolver even if an existing Supabase access token remains valid.
 Invitations can assign `vortex_support` or `vortex_auditor`; the owner role
 can only be established through the guarded bootstrap. Billing remains
 reserved until its module is available.
@@ -57,3 +57,6 @@ secret is configured, and the Supabase Auth invite email/redirect configuration
 is verified. Until then, keep the existing Vortex owner as the only provisioned
 platform account. Do not manually promote a school account, set `is_admin`, or
 create profile rows from a browser/client.
+
+
+Staff status changes are enforced at the application identity bridge: both `public.profiles.is_active` and `public.users.is_active` must be active for a request to resolve. This prevents a still-valid Supabase access token from retaining Chikoro API access after disablement. Re-enabling restores both records and is also audited.
