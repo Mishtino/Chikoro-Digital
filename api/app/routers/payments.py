@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
