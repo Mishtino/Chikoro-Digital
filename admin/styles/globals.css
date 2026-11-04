@@ -35,3 +35,9 @@
 .platform-staff-row > span:first-child { display: grid; gap: 3px; }
 .platform-staff-row small { color: #64748b; font-size: 12px; }
 .staff-role-label { border-radius: 999px; padding: 5px 9px; background: #eef2f7; color: #344256; font-size: 11px; text-transform: capitalize; }
+
+.staff-status-label{border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.staff-active{background:#e8f7f0;color:#18794e}
+.staff-inactive{background:#fff0ef;color:#b42318}
+.platform-staff-row .staff-status-action{width:auto;margin:0;padding:6px 9px;border:1px solid #d7deea;border-radius:7px;background:#fff;color:#34445f;font-size:11px;font-weight:700}
+.platform-staff-row .staff-status-action:hover{background:#f1f5fb}
