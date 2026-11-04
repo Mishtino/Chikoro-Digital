@@ -140,9 +140,19 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
     return True
 
 
-def _student_usd_balance(db: Session, school_id: int, student_id: int) -> float:
-    invoices = db.query(Invoice).filter(Invoice.school_id == school_id, Invoice.student_id == student_id, Invoice.currency == "USD", Invoice.status != "void").all()
-    return sum(float(invoice_balance(db, invoice)) for invoice in invoices)
+def _student_usd_balance(db: Session, school_id: int, student_id: int):
+    from decimal import Decimal
+
+    invoices = db.query(Invoice).filter(
+        Invoice.school_id == school_id,
+        Invoice.student_id == student_id,
+        Invoice.currency == "USD",
+        Invoice.status != "void",
+    ).all()
+    return sum(
+        (invoice_balance(db, invoice) for invoice in invoices),
+        Decimal("0"),
+    )
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
@@ -248,13 +258,19 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         amount = payload.amount
         if not math.isfinite(amount) or amount <= 0:
             raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
-        if payload.invoice_ids and amount > float(invoice_balance(db, selected_invoice)):
+        if payload.invoice_ids and to_decimal(amount) > invoice_balance(db, selected_invoice):
             raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
-        if not payload.invoice_ids and payload.student_id and amount > _student_usd_balance(db, sid, payload.student_id):
+        if not payload.invoice_ids and payload.student_id and to_decimal(amount) > _student_usd_balance(db, sid, payload.student_id):
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student balance")
     elif payload.invoice_ids:
-        invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
-        amount = sum(float(invoice_balance(db, inv)) for inv in invoices)
+        invoices = db.query(Invoice).filter(
+            Invoice.id.in_(payload.invoice_ids),
+            Invoice.school_id == sid,
+        ).all()
+        amount = sum(
+            (invoice_balance(db, inv) for inv in invoices),
+            to_decimal(0),
+        )
     elif payload.student_id:
         amount = _student_usd_balance(db, sid, payload.student_id)
     else:
