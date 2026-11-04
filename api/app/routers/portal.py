@@ -213,7 +213,7 @@ def guardian_register(
     if profile.local_user_id is not None:
         user = db.get(User, profile.local_user_id)
         if (
-            user is None or not user.is_active or profile.role != "parent"
+            user is None or not user.is_active or not profile.is_active or profile.role != "parent"
             or profile.school_id != school.id or user.role != "parent"
         ):
             raise HTTPException(status_code=409, detail="This identity is already linked to a different Chikoro role or school.")
