@@ -84,3 +84,19 @@ def test_school_creation_rejects_blank_name(client, seed_two_schools):
     })
 
     assert response.status_code == 422
+
+
+def test_legacy_admin_role_cannot_use_vortex_school_directory(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(),
+        user_id=admin.id,
+        school_id=None,
+        role="admin",
+        is_admin=True,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    response = client.get("/schools")
+
+    assert response.status_code == 403
