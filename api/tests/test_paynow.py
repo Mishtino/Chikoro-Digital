@@ -342,3 +342,55 @@ def test_reconcile_retries_unverified_attempt_until_hash_is_verified(
     assert db_session.query(Payment).filter(
         Payment.reference == f"paynow:{attempt_id}"
     ).count() == 1
+
+def test_initiation_rejects_untrusted_provider_checkout_url(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN007", name="Invalid Checkout URL School",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="invalid-url-student@example.test", full_name="Invalid URL Student",
+        password_hash="unused", role="student", school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-I1", first_name="Invalid",
+        last_name="URL", status="active", portal_user_id=user.id,
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id, invoice_number="PN-INV-I1",
+        currency="USD", total=20, status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _student_principal(
+        user.id, school.id
+    )
+    monkeypatch.setattr(
+        paynow, "initiate_transaction",
+        lambda **_kwargs: {
+            "status": "Ok",
+            "BrowserUrl": "https://attacker.example/checkout",
+            "PollUrl": "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
+        },
+    )
+
+    response = client.post(
+        "/paynow/initiate",
+        json={"invoice_ids": [invoice.id], "amount": 10},
+    )
+
+    assert response.status_code == 502
+    attempt = db_session.query(PaynowAttempt).one()
+    assert attempt.status == "failed"
+    assert attempt.browser_url is None
+    assert attempt.poll_url is None
