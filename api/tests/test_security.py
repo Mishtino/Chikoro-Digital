@@ -177,3 +177,80 @@ def test_student_cannot_read_another_students_report_card(client, db_session):
         headers={"Authorization": f"Bearer {_token(user)}"},
     )
     assert response.status_code == 403
+
+
+def test_production_auth_uses_verified_supabase_identity_and_profile_role(client, db_session, monkeypatch):
+    import uuid
+    from types import SimpleNamespace
+
+    from app import deps
+    from app.config import settings
+    from app.models.profile import Profile
+
+    school = School(code="AUTH001", name="Auth School")
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="auth-user@example.test",
+        full_name="Auth User",
+        password_hash=hash_password("unused-password"),
+        role="teacher",
+        school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    auth_user_id = str(uuid.uuid4())
+    db_session.add(Profile(
+        id=auth_user_id,
+        local_user_id=user.id,
+        role="owner",
+        school_id=school.id,
+        is_active=True,
+    ))
+    db_session.commit()
+
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "supabase_url", "https://example.supabase.co")
+    monkeypatch.setattr(settings, "supabase_publishable_key", "sb_publishable_test")
+    monkeypatch.setattr(
+        deps.httpx,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(
+            status_code=200,
+            json=lambda: {"id": auth_user_id, "email": user.email},
+        ),
+    )
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer verified-supabase-access-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["auth_user_id"] == auth_user_id
+    assert response.json()["role"] == "owner"
+    assert response.json()["is_admin"] is False
+
+
+def test_production_auth_rejects_unverified_supabase_token(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import deps
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "supabase_url", "https://example.supabase.co")
+    monkeypatch.setattr(settings, "supabase_publishable_key", "sb_publishable_test")
+    monkeypatch.setattr(
+        deps.httpx,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(status_code=401, json=lambda: {}),
+    )
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == 401
