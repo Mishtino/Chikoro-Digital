@@ -1,16 +1,18 @@
 services:
   - type: web
-    name: chikoro-api
-    env: python
+    name: Chikoro-Digital
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: api
     healthCheckPath: /health
     buildCommand: pip install -r requirements.txt
-    startCommand: cd api && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: APP_NAME
         value: Chikoro Digital API
       - key: PYTHON_VERSION
-        value: "3.14.8"
-
+        value: "3.12.10"
       - key: ENV
         value: production
       - key: DEBUG
@@ -29,31 +31,3 @@ services:
         value: https://chikoro-digital-d9ge.vercel.app/paynow/return
       - key: PAYNOW_RESULT_URL
         value: https://chikoro-digital.onrender.com/paynow/webhook
-
-  - type: web
-    name: chikoro-web
-    env: node
-    buildCommand: cd web && npm install && npm run build
-    startCommand: cd web && npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://chikoro-digital.onrender.com
-
-  - type: web
-    name: chikoro-admin
-    env: node
-    buildCommand: cd admin && npm install && npm run build
-    startCommand: cd admin && npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://chikoro-api.onrender.com
-
-  - type: worker
-    name: chikoro-worker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python worker/worker.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.14.8"
-
