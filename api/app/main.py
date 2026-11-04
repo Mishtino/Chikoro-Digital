@@ -41,6 +41,12 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    # Render's default health probe checks / unless a custom health path is set.
+    return {"status": "ok", "app": settings.app_name}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": settings.app_name, "env": settings.env}
