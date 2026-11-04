@@ -110,6 +110,25 @@ export default function Dashboard() {
 
 
 
+  async function setPlatformStaffStatus(member, isActive) {
+    const action = isActive ? 'restore access for' : 'disable access for';
+    if (!window.confirm(`Are you sure you want to ${action} ${member.full_name}?`)) return;
+    setError(''); setNotice('');
+    try {
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const res = await fetch(`${API}/platform/staff/${member.auth_user_id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ is_active: isActive }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Platform staff status update failed');
+      setNotice(`${member.full_name}: ${data.message}.`);
+      await load();
+    } catch (e) { setError(e.message); }
+  }
+
   async function invitePlatformStaff(e) {
     e.preventDefault();
     setInvitingStaff(true); setError(''); setNotice('');
@@ -248,6 +267,8 @@ export default function Dashboard() {
               <h3>Current platform accounts</h3>
               {platformStaff.map(member => <div className="platform-staff-row" key={member.auth_user_id}>
                 <span><strong>{member.full_name}</strong><small>{member.email}</small></span>
+                <span className={`staff-status-label ${member.is_active ? 'staff-active' : 'staff-inactive'}`}>{member.is_active ? 'Active' : 'Disabled'}</span>
+                {member.role !== 'vortex_admin' && <button className="staff-status-action" type="button" onClick={() => setPlatformStaffStatus(member, !member.is_active)}>{member.is_active ? 'Disable' : 'Re-enable'}</button>}
                 <span className="staff-role-label">{member.role.replaceAll('vortex_', '')}</span>
               </div>)}
             </div>}
