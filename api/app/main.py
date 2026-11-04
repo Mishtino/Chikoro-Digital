@@ -1,32 +1,31 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import settings
-from app.database import Base, engine, SessionLocal
+from app.database import engine
 from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications
-from app.models.user import User
-from app.services.auth import hash_password
 
+logger = logging.getLogger("chikoro.security")
 
-Base.metadata.create_all(bind=engine)
+# Production schema changes are applied only through reviewed migrations.
+# Do not run metadata.create_all() at application startup.
 
-# Optional first-install bootstrap. Credentials must be provided through the
-# deployment's secret environment variables; no usable default account exists.
-if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
-    _db = SessionLocal()
-    try:
-        if not _db.query(User).filter(User.email == settings.bootstrap_admin_email).first():
-            _db.add(User(
-                email=settings.bootstrap_admin_email,
-                full_name="Vortex Technologies",
-                password_hash=hash_password(settings.bootstrap_admin_password),
-                role="admin",
-                is_admin=True,
-                school_id=None,
-            ))
-            _db.commit()
-    finally:
-        _db.close()
+try:
+    with engine.connect() as connection:
+        role = connection.execute(text("""
+            select current_user,
+                   coalesce((select rolsuper from pg_roles where rolname = current_user), false),
+                   coalesce((select rolbypassrls from pg_roles where rolname = current_user), false)
+        """)).one()
+        logger.warning(
+            "database_role_check user=%s superuser=%s bypass_rls=%s",
+            role[0], role[1], role[2],
+        )
+except Exception:
+    logger.exception("database_role_check_failed")
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
@@ -43,7 +42,6 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    # Render's default health probe checks / unless a custom health path is set.
     return {"status": "ok", "app": settings.app_name}
 
 
