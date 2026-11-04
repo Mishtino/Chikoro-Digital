@@ -576,3 +576,46 @@ def test_verified_webhook_refuses_invoice_outside_attempt_tenant(
     assert db_session.query(Receipt).count() == 0
     db_session.refresh(attempt)
     assert attempt.status == "unverified"
+
+
+def test_late_cancellation_webhook_cannot_downgrade_paid_attempt(client, db_session, monkeypatch):
+    school = School(
+        code="PN013", name="Paid Attempt Protection",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-LATE-1",
+        first_name="Paid", last_name="Learner", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=school.id, student_id=student.id,
+        reference="PN-ALREADY-PAID", amount=12, currency="USD",
+        status="paid", poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=paid",
+    )
+    db_session.add(attempt)
+    db_session.flush()
+    payment = Payment(
+        school_id=school.id, student_id=student.id, amount=12,
+        currency="USD", method="paynow", reference=f"paynow:{attempt.id}",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    def unexpected_poll(*_args, **_kwargs):
+        raise AssertionError("A settled attempt must not be polled again")
+
+    monkeypatch.setattr(paynow, "poll_transaction", unexpected_poll)
+    response = client.post("/paynow/webhook", data={"reference": attempt.reference})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already paid"
+    db_session.refresh(attempt)
+    assert attempt.status == "paid"
+    assert db_session.query(Payment).filter(
+        Payment.reference == f"paynow:{attempt.id}"
+    ).count() == 1
