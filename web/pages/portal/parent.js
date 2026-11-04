@@ -14,6 +14,7 @@ export default function ParentPortal() {
   const [termsLoaded, setTermsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
   const [paying, setPaying] = useState(false);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export default function ParentPortal() {
         setTerms([]);
         setSelectedTermId('');
         setTermsLoaded(false);
+        setPaymentError('');
         return;
       }
       setError('');
@@ -58,6 +60,7 @@ export default function ParentPortal() {
       setTerms([]);
       setSelectedTermId('');
       setTermsLoaded(false);
+      setPaymentError('');
       try {
         const [feeData, termData] = await Promise.all([
           api('/portal/parent/children/' + selectedId + '/fee-status'),
@@ -99,15 +102,15 @@ export default function ParentPortal() {
   }, [selectedId, selectedTermId, termsLoaded]);
 
   async function payFees() {
-    if (!selectedId) return;
+    if (!selectedId || paying || !fees || Number(fees.total_balance) <= 0) return;
     setPaying(true);
-    setError('');
+    setPaymentError('');
     try {
       const response = await api('/paynow/initiate', { method: 'POST', body: JSON.stringify({ student_id: Number(selectedId) }) });
-      if (!response.browser_url) throw new Error('The payment provider did not return a checkout link.');
+      if (!response.browser_url) throw new Error('The payment provider did not return a secure checkout link. Please try again or contact the school.');
       window.location.href = response.browser_url;
     } catch (err) {
-      setError(err.message);
+      setPaymentError(err.message || 'Unable to start your payment. Please try again.');
       setPaying(false);
     }
   }
@@ -147,7 +150,8 @@ export default function ParentPortal() {
         <p><strong>{fees.name}</strong> · {fees.student_number}</p>
         <p style={{ fontSize: 22, fontWeight: 700 }}>Outstanding USD balance: {Number(fees.total_balance).toFixed(2)} USD</p>
         {Object.entries(fees.balances_by_currency || {}).filter(([currency]) => currency !== 'USD').map(([currency, balance]) => <p key={currency}>Outstanding {currency} balance: {Number(balance).toFixed(2)}</p>)}
-        <button type="button" onClick={payFees} disabled={paying || Number(fees.total_balance) <= 0}>{paying ? 'Opening secure checkout…' : 'Pay fees securely'}</button>
+        <button type="button" onClick={payFees} disabled={paying || Number(fees.total_balance) <= 0}>{paying ? 'Opening secure checkout…' : 'Pay USD balance securely'}</button>
+        {paymentError && <p role="alert" style={{ color: '#b42318', marginTop: 10 }}>{paymentError}</p>}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th align="left">Invoice</th><th align="right">Total</th><th align="right">Balance</th></tr></thead>
