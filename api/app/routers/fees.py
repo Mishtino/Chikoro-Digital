@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.fee import Term, FeeItem, FeeStructure, FeeStructureItem
 from app.models.payment import Invoice, InvoiceLine
 from app.models.student import Student
@@ -68,7 +68,7 @@ class GenerateInvoicesRequest(BaseModel):
     school_id: Optional[int] = None
 
 
-def _sid(principal: Principal, requested: Optional[int]) -> int:
+def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
@@ -79,7 +79,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.post("/terms", response_model=TermOut, status_code=status.HTTP_201_CREATED)
-def create_term(payload: TermCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_term(payload: TermCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     if payload.is_current:
         db.query(Term).filter(Term.school_id == sid).update({"is_current": False})
@@ -92,7 +92,7 @@ def create_term(payload: TermCreate, principal: Principal = Depends(get_current_
 
 
 @router.get("/terms", response_model=List[TermOut])
-def list_terms(school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -100,7 +100,7 @@ def list_terms(school_id: Optional[int] = Query(None), principal: Principal = De
 
 
 @router.post("/fee-items", response_model=FeeItemOut, status_code=status.HTTP_201_CREATED)
-def create_fee_item(payload: FeeItemCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=payload.currency, applies_to_form=payload.applies_to_form)
     db.add(item)
@@ -110,7 +110,7 @@ def create_fee_item(payload: FeeItemCreate, principal: Principal = Depends(get_c
 
 
 @router.get("/fee-items", response_model=List[FeeItemOut])
-def list_fee_items(school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_fee_items(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -118,7 +118,7 @@ def list_fee_items(school_id: Optional[int] = Query(None), principal: Principal 
 
 
 @router.post("/fee-structures", status_code=status.HTTP_201_CREATED)
-def create_fee_structure(payload: FeeStructureCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     fs = FeeStructure(school_id=sid, term_id=payload.term_id, form=payload.form, name=payload.name)
     db.add(fs)
@@ -140,7 +140,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: Principal = Dep
 
 
 @router.post("/invoices/generate")
-def generate_invoices(payload: GenerateInvoicesRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     term = db.get(Term, payload.term_id)
     if term is None or term.school_id != sid:
