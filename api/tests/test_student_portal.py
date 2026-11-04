@@ -120,3 +120,39 @@ def test_student_portal_fails_closed_when_account_maps_to_multiple_learners(clie
     assert results_response.status_code == 403
     assert fee_response.json()["detail"] == "Student account is not uniquely linked"
     assert results_response.json()["detail"] == "Student account is not uniquely linked"
+
+
+def test_student_portal_rejects_active_and_inactive_duplicate_mappings(client, db_session):
+    school = School(code="STU004", name="Historical Mapping School")
+    db_session.add(school)
+    db_session.flush()
+    db_session.add_all([
+        Student(
+            school_id=school.id, student_number="HIST-001",
+            first_name="Active", last_name="Learner", status="active",
+            portal_user_id=7200,
+        ),
+        Student(
+            school_id=school.id, student_number="HIST-002",
+            first_name="Inactive", last_name="Learner", status="inactive",
+            portal_user_id=7200,
+        ),
+    ])
+    db_session.commit()
+
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7200, school_id=school.id,
+        role="student", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    responses = [
+        client.get("/portal/fee-status"),
+        client.get("/portal/terms"),
+        client.get("/portal/results"),
+    ]
+    assert all(response.status_code == 403 for response in responses)
+    assert all(
+        response.json()["detail"] == "Student account is not uniquely linked"
+        for response in responses
+    )
