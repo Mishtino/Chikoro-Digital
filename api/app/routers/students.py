@@ -56,6 +56,8 @@ def _school_id(principal: Principal, requested: Optional[int]) -> int:
 
 @router.post("", response_model=StudentCreateResult, status_code=status.HTTP_201_CREATED)
 def create_student(payload: StudentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+        raise HTTPException(status_code=403, detail="Student administration role required")
     sid = _school_id(principal, payload.school_id)
     school = db.get(School, sid)
     if school is None:
@@ -104,6 +106,8 @@ def create_student(payload: StudentCreate, principal: Principal = Depends(get_cu
 
 @router.get("", response_model=List[StudentOut])
 def list_students(school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    if principal.role in ("student", "parent"):
+        raise HTTPException(status_code=403, detail="Staff access required")
     sid = _school_id(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -125,6 +129,8 @@ def list_students(school_id: Optional[int] = Query(None), principal: Principal =
 
 @router.get("/{student_id}")
 def get_student(student_id: int, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    if principal.role in ("student", "parent"):
+        raise HTTPException(status_code=403, detail="Staff access required")
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
