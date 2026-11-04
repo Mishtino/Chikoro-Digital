@@ -48,12 +48,16 @@ def portal_register(
     school = db.query(School).filter(School.code == payload.school_code.strip()).first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
+    # Lock the learner row so concurrent activation attempts cannot both
+    # consume the same one-time PIN and create separate local accounts.
     student = db.query(Student).filter(
         Student.school_id == school.id,
         Student.student_number == payload.student_number.strip(),
-    ).first()
+    ).with_for_update().first()
     if student is None:
         raise HTTPException(status_code=404, detail="Student record not found")
+    if student.status != "active":
+        raise HTTPException(status_code=403, detail="Only active learners can activate a portal account.")
     if student.activated_at is not None or student.portal_user_id is not None:
         raise HTTPException(status_code=409, detail="This learner account has already been activated. Contact your school administrator.")
     if student.activation_pin_hash is None:
