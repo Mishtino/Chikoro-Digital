@@ -1,5 +1,6 @@
 import { useRouter } from 'next/router';
 import { useState } from 'react';
+import { getSupabaseBrowserClient } from '../../lib/supabase';
 
 export default function PortalLogin() {
   const router = useRouter();
@@ -10,11 +11,18 @@ export default function PortalLogin() {
   async function submit(e) {
     e.preventDefault(); setError(''); setLoading(true);
     try {
-      const form = new URLSearchParams(); form.append('username', email); form.append('password', password);
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/login`, { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'We could not sign you in. Check your details and try again.');
-      localStorage.setItem('token', data.access_token); router.push('/portal/fees');
+      const supabase = getSupabaseBrowserClient();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (signInError) throw signInError;
+      const accessToken = data.session?.access_token;
+      if (!accessToken) throw new Error('A secure session could not be created. Please try again.');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/supabase/me`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const profile = await response.json();
+      if (!response.ok) throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.');
+      if (!['student', 'parent'].includes(profile.role)) throw new Error('This account does not have student or parent portal access.');
+      router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }
   return (
@@ -28,7 +36,7 @@ export default function PortalLogin() {
         <div className="form-eyebrow">Student & parent portal</div><h2>Welcome back</h2><p className="auth-subtitle">Sign in to continue to your school account.</p>
         {error && <div className="auth-alert error" role="alert">{error}</div>}
         <form onSubmit={submit}>
-          <div className="field"><label htmlFor="portal-email">Student ID or email</label><input id="portal-email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Enter your student ID or email" required /></div>
+          <div className="field"><label htmlFor="portal-email">Email address</label><input id="portal-email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Enter your email address" required /></div>
           <div className="field"><label htmlFor="portal-password">Password</label><input id="portal-password" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Enter your password" required /></div>
           <button className="auth-button" type="submit" disabled={loading}>{loading ? 'Signing you in…' : 'Sign in to portal'}</button>
         </form>
