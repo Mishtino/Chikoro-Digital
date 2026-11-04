@@ -46,3 +46,23 @@ def test_poll_url_accepts_https_paynow_hosts(url):
 def test_poll_url_rejects_untrusted_destinations(url):
     with pytest.raises(ValueError):
         _validate_poll_url(url)
+
+
+from types import SimpleNamespace
+
+from app.routers.paynow import _verified_paid_confirmation
+
+
+def test_paid_confirmation_must_match_local_reference_and_amount():
+    attempt = SimpleNamespace(reference="PN-EXPECTED", amount="25.00")
+    valid = {"hash_verified": True, "reference": "PN-EXPECTED", "amount": "25.00"}
+    assert _verified_paid_confirmation(valid, attempt)
+    assert not _verified_paid_confirmation(
+        {**valid, "reference": "PN-OTHER"}, attempt
+    )
+    assert not _verified_paid_confirmation(
+        {**valid, "amount": "250.00"}, attempt
+    )
+    assert not _verified_paid_confirmation(
+        {"hash_verified": True, "reference": "PN-EXPECTED"}, attempt
+    )
