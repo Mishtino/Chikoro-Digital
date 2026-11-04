@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production-please"
     supabase_url: str = ""
     admin_bootstrap_token: str = ""
+    platform_owner_email: str = ""
     access_token_expire_minutes: int = 60 * 8
     admin_mfa_required: bool = True
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
