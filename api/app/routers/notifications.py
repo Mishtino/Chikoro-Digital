@@ -22,6 +22,8 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 @router.get("")
 def list_notifications(school_id: Optional[int] = Query(None), status_filter: Optional[str] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    if principal.role in ("student", "parent"):
+        raise HTTPException(status_code=403, detail="Staff access required")
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
