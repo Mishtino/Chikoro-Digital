@@ -10,6 +10,8 @@ export default function PortalFees() {
   const [terms, setTerms] = useState([]);
   const [selectedTermId, setSelectedTermId] = useState('');
   const [error, setError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+  const [paying, setPaying] = useState(false);
   useEffect(() => {
     let active = true;
     getSupabaseBrowserClient().auth.getSession().then(({ data, error: sessionError }) => {
@@ -32,6 +34,7 @@ export default function PortalFees() {
       setResults(null);
       return () => { active = false; };
     }
+    setResults(null);
     api('/portal/results?term_id=' + encodeURIComponent(selectedTermId))
       .then(resultData => { if (active) setResults(resultData); })
       .catch(e => { if (active) setError(e.message); });
@@ -39,11 +42,16 @@ export default function PortalFees() {
   }, [selectedTermId]);
 
   async function pay() {
+    if (paying || !data || data.total_balance <= 0) return;
+    setPaying(true);
+    setPaymentError('');
     try {
       const res = await api('/paynow/initiate', { method: 'POST', body: JSON.stringify({}) });
-      if (res.browser_url) window.location.href = res.browser_url;
+      if (!res.browser_url) throw new Error('The payment provider did not return a secure checkout link. Please try again or contact your school.');
+      window.location.href = res.browser_url;
     } catch (e) {
-      setError(e.message);
+      setPaymentError(e.message || 'Unable to start your payment. Please try again.');
+      setPaying(false);
     }
   }
   if (error) return <div className="container"><div className="card"><h1>Unable to load your fee statement</h1><p role="alert">{error}</p><button onClick={() => router.push('/portal/login')}>Return to sign in</button></div></div>;
@@ -53,17 +61,18 @@ export default function PortalFees() {
       <div className="card">
         <h1>Fee status</h1>
         <p>{data.name} ({data.student_number})</p>
-        <p><strong>Outstanding USD balance: {data.total_balance.toFixed(2)} USD</strong></p>
+        <p><strong>Outstanding USD balance: {Number(data.total_balance).toFixed(2)} USD</strong></p>
         {Object.entries(data.balances_by_currency || {}).filter(([currency]) => currency !== 'USD').map(([currency, balance]) => <p key={currency}>Outstanding {currency} balance: {Number(balance).toFixed(2)}</p>)}
-        <button onClick={pay} disabled={data.total_balance <= 0} style={{ marginBottom: '1rem' }}>Pay now</button>
+        <button onClick={pay} disabled={paying || Number(data.total_balance) <= 0} style={{ marginBottom: '1rem' }}>{paying ? 'Opening secure checkout…' : 'Pay USD balance'}</button>
+        {paymentError && <p role="alert" style={{ color: '#b42318' }}>{paymentError}</p>}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><th align="left">Invoice</th><th align="right">Total</th><th align="right">Balance</th><th align="right">Currency</th></tr></thead>
           <tbody>
             {data.invoices.map((inv) => (
               <tr key={inv.invoice_number}>
                 <td>{inv.invoice_number}</td>
-                <td align="right">{inv.total.toFixed(2)}</td>
-                <td align="right">{inv.balance.toFixed(2)}</td><td align="right">{inv.currency}</td>
+                <td align="right">{Number(inv.total).toFixed(2)}</td>
+                <td align="right">{Number(inv.balance).toFixed(2)}</td><td align="right">{inv.currency}</td>
               </tr>
             ))}
           </tbody>
@@ -74,7 +83,7 @@ export default function PortalFees() {
             {terms.map(term => <option key={term.id} value={String(term.id)}>{term.name} · {term.academic_year}{term.is_current ? ' · Current' : ''}</option>)}
           </select>
         </div>}
-        {results && <section style={{ marginTop: '2rem' }}><h2>Published results</h2>{!results.subjects.length && <p>No results have been published yet.</p>}{results.subjects.map(subject => <div key={subject.subject} style={{ borderTop: '1px solid #e5e7eb', padding: '12px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{subject.subject}</strong><strong>{subject.average.toFixed(1)}%</strong></div><ul>{subject.assessments.map(item => <li key={item.name}>{item.name}: {item.score} / {item.max}</li>)}</ul></div>)}</section>}
+        {results && <section style={{ marginTop: '2rem' }}><h2>Published results</h2>{!results.subjects.length && <p>No results have been published yet.</p>}{results.subjects.map(subject => <div key={subject.subject} style={{ borderTop: '1px solid #e5e7eb', padding: '12px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{subject.subject}</strong><strong>{Number(subject.average).toFixed(1)}%</strong></div><ul>{subject.assessments.map(item => <li key={item.name}>{item.name}: {item.score} / {item.max}</li>)}</ul></div>)}</section>}
         <p style={{ marginTop: '1rem' }}><a href="#" onClick={async (event) => { event.preventDefault(); await getSupabaseBrowserClient().auth.signOut(); router.push('/portal/login'); }}>Log out</a></p>
       </div>
     </div>
