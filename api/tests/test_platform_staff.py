@@ -37,6 +37,7 @@ def _install_sqlite_profiles(db_session, monkeypatch):
 
     def sqlite_text(query):
         query = query.replace("public.profiles", "profiles")
+        query = query.replace("public.users", "users")
         query = query.replace("CAST(:auth_id AS uuid)", ":auth_id")
         query = query.replace("now()", "CURRENT_TIMESTAMP")
         query = query.replace("FOR UPDATE", "")
