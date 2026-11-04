@@ -3,7 +3,7 @@ from decimal import Decimal
 from app.models.payment import Invoice, Payment, PaymentAllocation
 from app.models.school import School
 from app.models.student import Student
-from app.services.money import allocate_payment, invoice_balance, student_balance
+from app.services.money import allocate_payment, invoice_balance, is_valid_payment_amount, student_balance
 
 
 def _records(db_session):
@@ -174,3 +174,14 @@ def test_student_balance_uses_school_scoped_payment_totals(db_session):
     db_session.commit()
 
     assert student_balance(db_session, school.id, student.id, "USD") == Decimal("70.00")
+
+
+def test_payment_amount_precision_is_explicit():
+    assert is_valid_payment_amount("10")
+    assert is_valid_payment_amount("10.00")
+    assert is_valid_payment_amount("10.000")
+    assert not is_valid_payment_amount("10.001")
+    assert not is_valid_payment_amount("NaN")
+    assert not is_valid_payment_amount("Infinity")
+    assert not is_valid_payment_amount("0")
+    assert not is_valid_payment_amount("-0.01")
