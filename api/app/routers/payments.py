@@ -11,7 +11,7 @@ from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.payment import Invoice, InvoiceLine, Payment, PaymentAllocation, Receipt
 from app.models.student import Student
 from app.models.school import School
-from app.services.money import allocate_payment, invoice_balance, next_receipt_number, to_decimal
+from app.services.money import allocate_payment, invoice_balance, is_valid_payment_amount, next_receipt_number, to_decimal
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -51,8 +51,12 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     school = db.query(School).filter(School.id == sid).with_for_update().first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
-    if not math.isfinite(payload.amount) or payload.amount <= 0:
-        raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
+    if not is_valid_payment_amount(payload.amount):
+        raise HTTPException(
+            status_code=422,
+            detail="Payment amount must be positive and have no more than two decimal places",
+        )
+    amount = to_decimal(payload.amount)
     currency = payload.currency.upper()
     if len(currency) != 3 or not currency.isalpha():
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
