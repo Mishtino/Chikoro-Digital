@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
+import { getSupabaseBrowserClient } from '../../lib/supabase';
 
 export default function PortalFees() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!localStorage.getItem('token')) { router.push('/portal/login'); return; }
-    api('/portal/fee-status').then(setData).catch((e) => setError(e.message));
+    let active = true;
+    getSupabaseBrowserClient().auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return;
+      if (sessionError || !data.session) { router.push('/portal/login'); return; }
+      api('/portal/fee-status').then((result) => { if (active) setData(result); }).catch((e) => { if (active) setError(e.message); });
+    }).catch(() => router.push('/portal/login'));
+    return () => { active = false; };
   }, [router]);
   async function pay() {
     try {
@@ -38,7 +44,7 @@ export default function PortalFees() {
             ))}
           </tbody>
         </table>
-        <p style={{ marginTop: '1rem' }}><a href="#" onClick={() => { localStorage.removeItem('token'); router.push('/'); }}>Log out</a></p>
+        <p style={{ marginTop: '1rem' }}><a href="#" onClick={async (event) => { event.preventDefault(); await getSupabaseBrowserClient().auth.signOut(); router.push('/portal/login'); }}>Log out</a></p>
       </div>
     </div>
   );
