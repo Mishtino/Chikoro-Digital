@@ -84,7 +84,7 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     row = db.execute(
         text("""
             SELECT p.id, p.local_user_id, p.role, p.school_id, p.is_active,
-                   u.is_admin
+                   u.is_admin, u.is_active AS local_user_is_active
             FROM public.profiles AS p
             LEFT JOIN public.users AS u ON u.id = p.local_user_id
             WHERE p.id = :auth_id
@@ -92,6 +92,7 @@ def resolve_profile(db: Session, claims: dict) -> dict:
         """),
         {"auth_id": claims["sub"]},
     ).mappings().first()
-    if not row or not row["is_active"] or row["local_user_id"] is None:
+    if (not row or not row["is_active"] or row["local_user_id"] is None
+            or not row["local_user_is_active"]):
         raise HTTPException(status_code=403, detail="Account is not activated for Chikoro Digital")
     return dict(row)
