@@ -278,3 +278,67 @@ def test_reconcile_paid_attempt_creates_one_payment_and_receipt(
     ).count() == 1
     db_session.refresh(attempt)
     assert attempt.status == "paid"
+
+
+def test_reconcile_retries_unverified_attempt_until_hash_is_verified(
+    client, db_session, monkeypatch
+):
+    from app.services import paynow as paynow_service
+
+    school = School(
+        code="PN006", name="Retry Verification School",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="retry-student@example.test", full_name="Retry Student",
+        password_hash="unused", role="student", school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-R2", first_name="Retry",
+        last_name="Student", status="active", portal_user_id=user.id,
+    )
+    db_session.add(student)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=school.id, student_id=student.id, reference="PN-RETRY-1",
+        amount=15, currency="USD", status="sent",
+        poll_url="https://paynow.example.test/poll/retry",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+    attempt_id = attempt.id
+
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=1, school_id=None,
+        role="owner", is_admin=True,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    poll_results = iter([
+        {"Status": "Paid", "hash_verified": False},
+        {"Status": "Paid", "hash_verified": True},
+    ])
+    monkeypatch.setattr(
+        paynow_service, "poll_transaction",
+        lambda _url, _key: next(poll_results),
+    )
+
+    first = client.post("/paynow/reconcile")
+    db_session.refresh(attempt)
+    assert first.status_code == 200
+    assert first.json() == {"updated": 1}
+    assert attempt.status == "unverified"
+    assert db_session.query(Payment).count() == 0
+
+    second = client.post("/paynow/reconcile")
+    db_session.refresh(attempt)
+    assert second.status_code == 200
+    assert second.json() == {"updated": 1}
+    assert attempt.status == "paid"
+    assert db_session.query(Payment).filter(
+        Payment.reference == f"paynow:{attempt_id}"
+    ).count() == 1
