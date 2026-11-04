@@ -40,6 +40,16 @@ class BulkMarksRequest(BaseModel):
     school_id: Optional[int] = None
 
 
+def _require_teacher_role(principal: Principal) -> None:
+    if not principal.is_admin and principal.role not in ("owner", "headmaster", "teacher"):
+        raise HTTPException(status_code=403, detail="Teaching role required")
+
+
+def _require_publisher_role(principal: Principal) -> None:
+    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+        raise HTTPException(status_code=403, detail="Academic approval role required")
+
+
 def _sid(principal: Principal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
@@ -52,6 +62,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 @router.post("/subjects", status_code=status.HTTP_201_CREATED)
 def create_subject(payload: SubjectCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_teacher_role(principal)
     sid = _sid(principal, payload.school_id)
     subject = Subject(school_id=sid, name=payload.name, code=payload.code)
     db.add(subject)
@@ -70,7 +81,17 @@ def list_subjects(school_id: Optional[int] = Query(None), principal: Principal =
 
 @router.post("/assessments", status_code=status.HTTP_201_CREATED)
 def create_assessment(payload: AssessmentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_teacher_role(principal)
     sid = _sid(principal, payload.school_id)
+    subject = db.get(Subject, payload.subject_id)
+    if subject is None or subject.school_id != sid:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    if payload.term_id is not None:
+        term = db.get(Term, payload.term_id)
+        if term is None or term.school_id != sid:
+            raise HTTPException(status_code=404, detail="Term not found")
+    if payload.max_score <= 0 or payload.weight <= 0:
+        raise HTTPException(status_code=400, detail="Assessment max_score and weight must be positive")
     a = Assessment(school_id=sid, subject_id=payload.subject_id, term_id=payload.term_id, name=payload.name, weight=payload.weight, max_score=payload.max_score)
     db.add(a)
     db.commit()
@@ -93,9 +114,16 @@ def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[
 
 @router.post("/marks")
 def enter_marks(payload: BulkMarksRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_teacher_role(principal)
     sid = _sid(principal, payload.school_id)
     created = 0
     for e in payload.entries:
+        student = db.get(Student, e.student_id)
+        assessment = db.get(Assessment, e.assessment_id)
+        if student is None or student.school_id != sid or assessment is None or assessment.school_id != sid:
+            raise HTTPException(status_code=404, detail="Student or assessment not found in this school")
+        if e.score < 0 or e.score > float(assessment.max_score):
+            raise HTTPException(status_code=400, detail="Mark must be between zero and the assessment maximum")
         existing = db.query(Mark).filter(Mark.school_id == sid, Mark.student_id == e.student_id, Mark.assessment_id == e.assessment_id).first()
         if existing:
             existing.score = e.score
@@ -110,12 +138,14 @@ def enter_marks(payload: BulkMarksRequest, principal: Principal = Depends(get_cu
 
 @router.post("/marks/approve")
 def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_publisher_role(principal)
     sid = _sid(principal, school_id)
     updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).update({"status": "approved"})
     db.commit()
     return {"approved": updated}
 @router.post("/marks/publish")
 def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_publisher_role(principal)
     sid = _sid(principal, school_id)
     marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).all()
     from datetime import datetime, timezone
@@ -149,6 +179,8 @@ def report_card(student_id: int, term_id: Optional[int] = None, principal: Princ
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
+    if principal.role in ("student", "parent") and student.portal_user_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     if not principal.is_admin and principal.school_id != student.school_id:
         raise HTTPException(status_code=403, detail="Access denied")
     q = db.query(Mark, Assessment, Subject).join(Assessment, Assessment.id == Mark.assessment_id).join(Subject, Subject.id == Assessment.subject_id).filter(Mark.student_id == student_id, Mark.status == "published")
