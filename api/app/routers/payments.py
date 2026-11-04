@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -45,8 +46,8 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     student = db.get(Student, payload.student_id)
     if student is None or student.school_id != sid:
         raise HTTPException(status_code=404, detail="Student not found")
-    if payload.amount <= 0:
-        raise HTTPException(status_code=422, detail="Payment amount must be positive")
+    if not math.isfinite(payload.amount) or payload.amount <= 0:
+        raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
     if payload.invoice_ids:
         requested_ids = set(payload.invoice_ids)
         if len(requested_ids) != len(payload.invoice_ids):
@@ -58,6 +59,13 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         ).count()
         if matched != len(requested_ids):
             raise HTTPException(status_code=404, detail="One or more invoices do not belong to this student and school")
+        outstanding = sum((invoice_balance(db, inv) for inv in db.query(Invoice).filter(Invoice.id.in_(requested_ids), Invoice.school_id == sid, Invoice.student_id == payload.student_id).all()), to_decimal(0))
+        if to_decimal(payload.amount) > outstanding:
+            raise HTTPException(status_code=422, detail="Payment amount exceeds the selected invoices' outstanding balance")
+    else:
+        outstanding = student_balance(db, sid, payload.student_id)
+        if to_decimal(payload.amount) > outstanding:
+            raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
     payment = Payment(
         school_id=sid,
         student_id=payload.student_id,
