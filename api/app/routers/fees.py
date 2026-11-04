@@ -1,4 +1,5 @@
 from datetime import date
+import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -102,6 +103,8 @@ def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrinci
 @router.post("/fee-items", response_model=FeeItemOut, status_code=status.HTTP_201_CREATED)
 def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    if not math.isfinite(payload.amount) or payload.amount <= 0:
+        raise HTTPException(status_code=422, detail="Fee amount must be a finite positive value")
     item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=payload.currency, applies_to_form=payload.applies_to_form)
     db.add(item)
     db.commit()
