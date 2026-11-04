@@ -72,7 +72,7 @@ export default function ParentActivate() {
         {error && <div className="auth-alert error" role="alert">{error}</div>}
         {loading ? <p role="status">Checking your secure session…</p> : <form onSubmit={submit}>
           <div className="field"><label htmlFor="guardian-pin">Eight-digit school-issued activation PIN</label><input id="guardian-pin" inputMode="numeric" autoComplete="one-time-code" maxLength={8} pattern="[0-9]{8}" value={pin} onChange={event => setPin(event.target.value.replace(/[^0-9]/g, '').slice(0, 8))} placeholder="Enter the PIN from your school" required /></div>
-          <button className="auth-button" type="submit" disabled={submitting || pin.length !== 8}>{submitting ? 'Verifying guardian link…' : 'Activate parent portal'}</button>
+          <button className="auth-button" type="submit" disabled={submitting || pin.length !== 8}>{submitting ? 'Verifying school link…' : activationType === 'student' ? 'Activate student portal' : 'Activate parent portal'}</button>
         </form>}
         <div className="auth-divider"></div>
         <div className="auth-links"><button type="button" onClick={logout}>Sign out</button><a href="/portal/login">Return to sign in</a></div>
