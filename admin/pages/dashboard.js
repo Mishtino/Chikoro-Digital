@@ -19,6 +19,9 @@ export default function Dashboard() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [platformStaff, setPlatformStaff] = useState([]);
+  const [staffInvite, setStaffInvite] = useState({ email: '', full_name: '', role: 'vortex_support' });
+  const [invitingStaff, setInvitingStaff] = useState(false);
   const [platformAccess, setPlatformAccess] = useState({ role: '', permissions: [] });
   const can = (permission) => platformAccess.permissions.includes(permission);
 
@@ -57,6 +60,14 @@ export default function Dashboard() {
         setSchools(Array.isArray(data) ? data : []);
       } else {
         setSchools([]);
+      }
+      if (permissions.includes('platform:staff:write')) {
+        const staffRes = await fetch(`${API}/platform/staff`, { headers: { Authorization: `Bearer ${token}` } });
+        const staffData = await staffRes.json();
+        if (!staffRes.ok) throw new Error(staffData.detail || 'Failed to load platform staff');
+        setPlatformStaff(Array.isArray(staffData) ? staffData : []);
+      } else {
+        setPlatformStaff([]);
       }
       if (permissions.includes('audit:read')) {
         const auditRes = await fetch(`${API}/platform/audit-logs?limit=8&offset=0`, { headers: { Authorization: `Bearer ${token}` } });
@@ -97,6 +108,27 @@ export default function Dashboard() {
     finally { setCreatingSchool(false); }
   }
 
+
+
+  async function invitePlatformStaff(e) {
+    e.preventDefault();
+    setInvitingStaff(true); setError(''); setNotice('');
+    try {
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const res = await fetch(`${API}/platform/staff/invitations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify(staffInvite),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Staff invitation failed');
+      setNotice(`Invitation sent to ${data.email} as ${data.role.replaceAll('vortex_', '')}.`);
+      setStaffInvite({ email: '', full_name: '', role: 'vortex_support' });
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setInvitingStaff(false); }
+  }
 
   function beginSchoolEdit(school) {
     setEditingSchool(school);
@@ -194,6 +226,32 @@ export default function Dashboard() {
               <input id="school-province" value={schoolForm.province} onChange={e => setSchoolForm({ ...schoolForm, province: e.target.value })} placeholder="e.g. Harare" maxLength={100} />
               <button className="admin-button" type="submit" disabled={creatingSchool}>{creatingSchool ? 'Adding school…' : 'Add school'}</button>
             </form>
+          </section>}
+
+
+          {can('platform:staff:write') && <section className="dashboard-card platform-staff-card">
+            <div className="dashboard-card-heading"><div><span className="admin-eyebrow">Access governance</span><h2>Vortex platform staff</h2></div><span className="school-count">{platformStaff.length} accounts</span></div>
+            <p className="dashboard-description">Invite trusted team members with limited platform permissions. Only the platform owner can grant these roles.</p>
+            <form onSubmit={invitePlatformStaff}>
+              <label htmlFor="staff-name">Full name</label>
+              <input id="staff-name" value={staffInvite.full_name} onChange={e => setStaffInvite({ ...staffInvite, full_name: e.target.value })} placeholder="Staff member's name" minLength={2} maxLength={200} required />
+              <label htmlFor="staff-email">Email address</label>
+              <input id="staff-email" type="email" value={staffInvite.email} onChange={e => setStaffInvite({ ...staffInvite, email: e.target.value })} placeholder="name@example.com" maxLength={255} required />
+              <label htmlFor="staff-role">Platform role</label>
+              <select id="staff-role" value={staffInvite.role} onChange={e => setStaffInvite({ ...staffInvite, role: e.target.value })}>
+                <option value="vortex_support">Support — school directory read-only</option>
+                <option value="vortex_auditor">Auditor — audit feed read-only</option>
+                <option value="vortex_billing">Billing — reserved until billing module is enabled</option>
+              </select>
+              <button className="admin-button" type="submit" disabled={invitingStaff}>{invitingStaff ? 'Sending invitation…' : 'Send staff invitation'}</button>
+            </form>
+            {platformStaff.length > 0 && <div className="platform-staff-list">
+              <h3>Current platform accounts</h3>
+              {platformStaff.map(member => <div className="platform-staff-row" key={member.auth_user_id}>
+                <span><strong>{member.full_name}</strong><small>{member.email}</small></span>
+                <span className="staff-role-label">{member.role.replaceAll('vortex_', '')}</span>
+              </div>)}
+            </div>}
           </section>}
 
           {can('schools:read') && <section className="dashboard-card school-list-card">
