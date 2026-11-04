@@ -79,3 +79,40 @@ def test_resolve_profile_rejects_unlinked_or_inactive_accounts(row):
         resolve_profile(FakeSession(row), {"sub": str(uuid4())})
 
     assert exc.value.status_code == 403
+
+
+
+def test_resolve_profile_accepts_vortex_admin_bridge_for_platform_owner():
+    row = {
+        "id": uuid4(),
+        "local_user_id": 1,
+        "role": "vortex_admin",
+        "school_id": None,
+        "is_active": True,
+        "local_user_role": "admin",
+        "local_school_id": None,
+        "is_admin": True,
+        "local_user_is_active": True,
+    }
+    profile = resolve_profile(FakeSession(row), {"sub": str(row["id"])})
+
+    assert profile["role"] == "vortex_admin"
+    assert profile["is_admin"] is True
+
+
+def test_resolve_profile_rejects_legacy_admin_profile_role():
+    row = {
+        "id": uuid4(),
+        "local_user_id": 1,
+        "role": "admin",
+        "school_id": None,
+        "is_active": True,
+        "local_user_role": "admin",
+        "local_school_id": None,
+        "is_admin": True,
+        "local_user_is_active": True,
+    }
+    with pytest.raises(HTTPException) as exc:
+        resolve_profile(FakeSession(row), {"sub": str(row["id"])})
+
+    assert exc.value.status_code == 403
