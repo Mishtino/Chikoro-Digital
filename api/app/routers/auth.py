@@ -1,12 +1,18 @@
 import hmac
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps_supabase import get_supabase_principal, SupabasePrincipal
+from app.deps_supabase import get_supabase_principal, SupabasePrincipal, bearer
 from app.config import settings
-from sqlalchemy import text
+from sqlalchemy import text, func
+from fastapi.security import HTTPAuthorizationCredentials
+from app.models.user import User
+from app.services.auth import hash_password
+from app.services.ids import verify_pin
+from app.services.supabase_auth import verify_supabase_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,6 +71,96 @@ def bootstrap_first_admin(
         raise HTTPException(status_code=409, detail="Administrator identity is already linked")
     db.commit()
     return {"message": "The verified platform administrator identity has been linked. You can now sign in."}
+
+
+@router.post("/parent/activate")
+def activate_parent_account(
+    pin: str,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Supabase bearer token required")
+    claims = verify_supabase_access_token(credentials.credentials)
+    auth_id = claims["sub"]
+    auth_user = db.execute(text("""
+        SELECT email, email_confirmed_at
+        FROM auth.users
+        WHERE id = CAST(:auth_id AS uuid)
+    """), {"auth_id": auth_id}).mappings().first()
+    if not auth_user or not auth_user["email"] or auth_user["email_confirmed_at"] is None:
+        raise HTTPException(status_code=403, detail="Verify your email address before activating the parent portal")
+
+    contacts = db.execute(text("""
+        SELECT c.id, c.student_id, c.school_id, c.name, c.guardian_activation_pin_hash
+        FROM public.contacts AS c
+        JOIN public.students AS s
+          ON s.id = c.student_id AND s.school_id = c.school_id
+        WHERE lower(c.email) = lower(:email)
+          AND c.guardian_activation_pin_hash IS NOT NULL
+          AND c.guardian_activation_expires_at > now()
+          AND c.guardian_activated_at IS NULL
+          AND s.status = 'active'
+    """), {"email": auth_user["email"]}).mappings().all()
+    matches = [row for row in contacts if verify_pin(pin, row["guardian_activation_pin_hash"])]
+    if len(matches) != 1:
+        raise HTTPException(status_code=403, detail="Activation PIN is invalid, expired, or not uniquely assigned")
+    contact = matches[0]
+
+    local_user = db.query(User).filter(func.lower(User.email) == auth_user["email"].lower()).first()
+    if local_user is None:
+        local_user = User(
+            email=auth_user["email"].lower(),
+            full_name=contact["name"],
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+            role="parent",
+            school_id=contact["school_id"],
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(local_user)
+        db.flush()
+    elif not local_user.is_active or local_user.role != "parent" or local_user.school_id != contact["school_id"]:
+        raise HTTPException(status_code=409, detail="This email is already assigned to a different Chikoro account")
+
+    existing_profile = db.execute(text("""
+        SELECT local_user_id, role, school_id, is_active
+        FROM public.profiles
+        WHERE id = CAST(:auth_id AS uuid)
+    """), {"auth_id": auth_id}).mappings().first()
+    if existing_profile and (
+        existing_profile["local_user_id"] != local_user.id
+        or existing_profile["role"] != "parent"
+        or existing_profile["school_id"] != contact["school_id"]
+        or not existing_profile["is_active"]
+    ):
+        raise HTTPException(status_code=409, detail="This Supabase identity is already linked to another account")
+    if not existing_profile:
+        db.execute(text("""
+            INSERT INTO public.profiles
+                (id, local_user_id, role, school_id, is_active, created_at, updated_at)
+            VALUES
+                (CAST(:auth_id AS uuid), :local_user_id, 'parent', :school_id, true, now(), now())
+        """), {"auth_id": auth_id, "local_user_id": local_user.id, "school_id": contact["school_id"]})
+
+    db.execute(text("""
+        INSERT INTO public.guardian_links
+            (profile_id, contact_id, school_id, is_active, verified_at, created_at)
+        VALUES
+            (CAST(:auth_id AS uuid), :contact_id, :school_id, true, now(), now())
+        ON CONFLICT (profile_id, contact_id)
+        DO UPDATE SET is_active = true, verified_at = now(), school_id = EXCLUDED.school_id
+    """), {"auth_id": auth_id, "contact_id": contact["id"], "school_id": contact["school_id"]})
+    db.execute(text("""
+        UPDATE public.contacts
+        SET guardian_activated_at = now(),
+            guardian_activation_pin_hash = NULL,
+            guardian_activation_expires_at = NULL,
+            verified_email = true
+        WHERE id = :contact_id AND school_id = :school_id
+    """), {"contact_id": contact["id"], "school_id": contact["school_id"]})
+    db.commit()
+    return {"message": "Parent account activated and linked to the verified learner."}
 
 
 @router.post("/login", status_code=status.HTTP_410_GONE)
