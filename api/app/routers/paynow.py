@@ -149,7 +149,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
         amount = sum(float(invoice_balance(db, inv)) for inv in invoices)
     elif payload.student_id:
-        amount = float(student_balance(db, sid, payload.student_id))
+        amount = _student_usd_balance(db, sid, payload.student_id)
     else:
         raise HTTPException(status_code=400, detail="amount or student_id or invoice_ids required")
 
