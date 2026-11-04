@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import get_db
@@ -76,9 +77,24 @@ def get_settings(school_id: Optional[int] = None, principal: SupabasePrincipal =
 
 
 @router.post("/initiate")
-def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
+def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'student', 'parent')), db: Session = Depends(get_db)):
     # determine school
-    if payload.student_id:
+    if principal.role == 'student':
+        linked = db.query(Student).filter(Student.portal_user_id == principal.user_id, Student.school_id == principal.school_id, Student.status == 'active').all()
+        if len(linked) != 1:
+            raise HTTPException(status_code=403, detail='Student account is not uniquely linked')
+        if payload.student_id is not None and payload.student_id != linked[0].id:
+            raise HTTPException(status_code=403, detail='Access denied')
+        payload.student_id = linked[0].id
+        sid = linked[0].school_id
+    elif principal.role == 'parent':
+        if payload.student_id is None or principal.school_id is None:
+            raise HTTPException(status_code=422, detail='Select a linked learner for payment')
+        link = db.execute(text("SELECT 1 FROM public.guardian_links gl JOIN public.contacts c ON c.id=gl.contact_id AND c.school_id=gl.school_id JOIN public.students s ON s.id=c.student_id AND s.school_id=c.school_id WHERE gl.profile_id=:profile_id AND gl.school_id=:school_id AND c.student_id=:student_id AND gl.is_active=true AND gl.verified_at IS NOT NULL AND s.status='active' LIMIT 1"), {'profile_id': str(principal.auth_user_id), 'school_id': principal.school_id, 'student_id': payload.student_id}).first()
+        if link is None:
+            raise HTTPException(status_code=404, detail='Linked student not found')
+        sid = principal.school_id
+    elif payload.student_id:
         student = db.get(Student, payload.student_id)
         if student is None:
             raise HTTPException(status_code=404, detail="Student not found")
