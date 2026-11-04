@@ -2,7 +2,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.models.payment import Invoice, Payment, PaymentAllocation
+from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 
 
 def to_decimal(value) -> Decimal:
@@ -76,3 +76,22 @@ def allocate_payment(db: Session, payment: Payment, invoice_ids: list[int] | Non
         db.add(PaymentAllocation(school_id=payment.school_id, payment_id=payment.id, invoice_id=inv.id, amount=alloc))
         remaining -= alloc
     db.flush()
+
+
+def next_receipt_number(db: Session, school_id: int) -> str:
+    """Return the next school receipt number.
+
+    Callers must hold the school's row lock while generating and inserting
+    the receipt so concurrent manual and Paynow payments serialize.
+    """
+    existing = db.query(Receipt.receipt_number).filter(
+        Receipt.school_id == school_id
+    ).all()
+    highest = 0
+    for (receipt_number,) in existing:
+        if not isinstance(receipt_number, str) or not receipt_number.startswith("RCP-"):
+            continue
+        suffix = receipt_number[4:]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return f"RCP-{highest + 1:05d}"
