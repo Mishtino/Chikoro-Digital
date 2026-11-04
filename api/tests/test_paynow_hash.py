@@ -87,3 +87,17 @@ def test_browser_url_rejects_untrusted_destinations(url):
     from app.services.paynow import _validate_browser_url
     with pytest.raises(ValueError):
         _validate_browser_url(url)
+
+def test_paid_confirmation_rejects_fractional_cent_amount_and_non_finite_values():
+    from types import SimpleNamespace
+    from app.routers.paynow import _verified_paid_confirmation
+
+    attempt = SimpleNamespace(reference="PN-EXACT", amount="25.00")
+    assert not _verified_paid_confirmation(
+        {"hash_verified": True, "reference": "PN-EXACT", "amount": "25.001"},
+        attempt,
+    )
+    assert not _verified_paid_confirmation(
+        {"hash_verified": True, "reference": "PN-EXACT", "amount": "NaN"},
+        attempt,
+    )
