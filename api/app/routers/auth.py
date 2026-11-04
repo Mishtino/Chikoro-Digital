@@ -45,9 +45,11 @@ def bootstrap_first_admin(
         raise HTTPException(status_code=401, detail="Invalid bootstrap credentials")
 
     db.execute(text("LOCK TABLE public.profiles IN EXCLUSIVE MODE"))
-    profile_count = db.execute(text("SELECT count(*) FROM public.profiles")).scalar_one()
-    if profile_count:
-        raise HTTPException(status_code=409, detail="Bootstrap is closed because a profile already exists")
+    platform_owner_count = db.execute(text("""
+        SELECT count(*) FROM public.profiles WHERE role = 'vortex_admin'
+    """)).scalar_one()
+    if platform_owner_count:
+        raise HTTPException(status_code=409, detail="Vortex platform owner bootstrap has already been completed")
 
     owner_email = (settings.platform_owner_email or "").strip().lower()
     if not owner_email:
