@@ -26,10 +26,10 @@ export default function Dashboard() {
       headers: { Authorization: `Bearer ${token}` },
     });
     const profile = await identity.json().catch(() => ({}));
-    if (!identity.ok || !profile.is_admin) {
+    if (!identity.ok || !profile.is_platform_admin) {
       await supabase.auth.signOut();
       router.replace('/');
-      throw new Error('This account is not authorised for the Vortex control centre.');
+      throw new Error('This account is not authorised for the Vortex Developer Portal.');
     }
     return token;
   }
@@ -87,13 +87,13 @@ export default function Dashboard() {
   return (
     <main className="admin-dashboard">
       <header className="dashboard-topbar">
-        <a className="dashboard-brand" href="/dashboard"><span className="admin-mark">V</span><span><strong>VORTEX TECHNOLOGIES</strong><small>CHIKORO DIGITAL CONTROL CENTRE</small></span></a>
+        <a className="dashboard-brand" href="/dashboard"><span className="admin-mark">V</span><span><strong>VORTEX TECHNOLOGIES</strong><small>VORTEX DEVELOPER PORTAL</small></span></a>
         <button className="dashboard-logout" type="button" onClick={logout}>Sign out</button>
       </header>
 
       <div className="dashboard-content">
         <div className="dashboard-heading">
-          <div><span className="admin-eyebrow">Platform overview</span><h1>Schools</h1><p>Manage the schools connected to Chikoro Digital from one secure workspace.</p></div>
+          <div><span className="admin-eyebrow">Vortex Technologies · Platform operations</span><h1>Developer control centre</h1><p>Manage Chikoro Digital as the platform operator. School administrators use a separate, school-scoped portal.</p></div>
           <span className="dashboard-secure"><span /> Secure platform access</span>
         </div>
 
@@ -134,7 +134,7 @@ export default function Dashboard() {
             <button className="dashboard-refresh" type="button" onClick={load} disabled={loading}>↻ Refresh directory</button>
           </section>
         </div>
-        <footer className="dashboard-footer">Chikoro Digital · Vortex Technologies <span>Platform administration</span></footer>
+        <footer className="dashboard-footer">Chikoro Digital · Vortex Technologies <span>Vortex platform operations</span></footer>
       </div>
     </main>
   );
