@@ -57,7 +57,7 @@ class SchoolOut(BaseModel):
 
 @router.post("", response_model=SchoolOut, status_code=status.HTTP_201_CREATED)
 def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if not admin.is_admin:
+    if not admin.is_platform_admin:
         raise HTTPException(status_code=403, detail="Platform administrator access required")
     existing = db.query(School).filter(School.code == payload.code).first()
     if existing:
@@ -86,6 +86,6 @@ def get_school(school_id: int, principal: SupabasePrincipal = Depends(get_supaba
     school = db.get(School, school_id)
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
-    if not principal.is_admin and principal.school_id != school_id:
+    if not principal.is_platform_admin and principal.school_id != school_id:
         raise HTTPException(status_code=403, detail="Access denied")
     return school
