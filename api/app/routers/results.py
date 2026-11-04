@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.results import Subject, Assessment, Mark
 from app.models.student import Student
 from app.models.fee import Term
@@ -40,7 +40,7 @@ class BulkMarksRequest(BaseModel):
     school_id: Optional[int] = None
 
 
-def _sid(principal: Principal, requested: Optional[int]) -> int:
+def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
@@ -51,7 +51,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.post("/subjects", status_code=status.HTTP_201_CREATED)
-def create_subject(payload: SubjectCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_subject(payload: SubjectCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     subject = Subject(school_id=sid, name=payload.name, code=payload.code)
     db.add(subject)
@@ -61,7 +61,7 @@ def create_subject(payload: SubjectCreate, principal: Principal = Depends(get_cu
 
 
 @router.get("/subjects")
-def list_subjects(school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_subjects(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -69,7 +69,7 @@ def list_subjects(school_id: Optional[int] = Query(None), principal: Principal =
 
 
 @router.post("/assessments", status_code=status.HTTP_201_CREATED)
-def create_assessment(payload: AssessmentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def create_assessment(payload: AssessmentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     a = Assessment(school_id=sid, subject_id=payload.subject_id, term_id=payload.term_id, name=payload.name, weight=payload.weight, max_score=payload.max_score)
     db.add(a)
@@ -79,7 +79,7 @@ def create_assessment(payload: AssessmentCreate, principal: Principal = Depends(
 
 
 @router.get("/assessments")
-def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -92,7 +92,7 @@ def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[
 
 
 @router.post("/marks")
-def enter_marks(payload: BulkMarksRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     created = 0
     for e in payload.entries:
@@ -109,13 +109,13 @@ def enter_marks(payload: BulkMarksRequest, principal: Principal = Depends(get_cu
 
 
 @router.post("/marks/approve")
-def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
     updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).update({"status": "approved"})
     db.commit()
     return {"approved": updated}
 @router.post("/marks/publish")
-def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
     marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).all()
     from datetime import datetime, timezone
@@ -145,7 +145,7 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
 
 
 @router.get("/report-card/{student_id}")
-def report_card(student_id: int, term_id: Optional[int] = None, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def report_card(student_id: int, term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
