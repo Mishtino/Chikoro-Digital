@@ -20,8 +20,8 @@ export default function PortalLogin() {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const profile = await response.json();
-      if (!response.ok) throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.');
-      if (!['student', 'parent'].includes(profile.role)) throw new Error('This account does not have student or parent portal access.');
+      if (!response.ok) { await supabase.auth.signOut(); throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.'); }
+      if (!['student', 'parent'].includes(profile.role)) { await supabase.auth.signOut(); throw new Error('This account does not have student or parent portal access.'); }
       router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }
