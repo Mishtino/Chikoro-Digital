@@ -43,4 +43,7 @@ class Contact(Base):
     is_primary = Column(Boolean, default=False, nullable=False)
     verified_phone = Column(Boolean, default=False, nullable=False)
     verified_email = Column(Boolean, default=False, nullable=False)
+    guardian_activation_pin_hash = Column(String(255), nullable=True)
+    guardian_activation_expires_at = Column(DateTime(timezone=True), nullable=True)
+    guardian_activated_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
