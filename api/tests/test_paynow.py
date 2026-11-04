@@ -619,3 +619,63 @@ def test_late_cancellation_webhook_cannot_downgrade_paid_attempt(client, db_sess
     assert db_session.query(Payment).filter(
         Payment.reference == f"paynow:{attempt.id}"
     ).count() == 1
+
+
+def test_verified_paynow_attempt_is_not_settled_above_remaining_invoice_balance(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN014", name="No Overpayment Settlement",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-OVER-1",
+        first_name="Balance", last_name="Student", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PN-OVER-INV", currency="USD", total=20,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    prior_payment = Payment(
+        school_id=school.id, student_id=student.id, amount=20,
+        currency="USD", method="cash", reference="CASH-SETTLED-FIRST",
+    )
+    db_session.add(prior_payment)
+    db_session.flush()
+    db_session.add(PaymentAllocation(
+        school_id=school.id, payment_id=prior_payment.id,
+        invoice_id=invoice.id, amount=20,
+    ))
+    attempt = PaynowAttempt(
+        school_id=school.id, student_id=student.id, invoice_id=invoice.id,
+        reference="PN-STALE-BALANCE", amount=20, currency="USD",
+        status="sent", poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=stale",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        paynow, "poll_transaction",
+        lambda _url, _key: {
+            "Status": "Paid", "reference": "PN-STALE-BALANCE",
+            "amount": "20.00", "hash_verified": True,
+        },
+    )
+
+    response = client.post("/paynow/webhook", data={"reference": attempt.reference})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "verified payment could not be matched to its invoice"
+    assert db_session.query(Payment).count() == 1
+    assert db_session.query(PaymentAllocation).count() == 1
+    assert db_session.query(Receipt).count() == 0
+    db_session.refresh(attempt)
+    assert attempt.status == "unverified"
