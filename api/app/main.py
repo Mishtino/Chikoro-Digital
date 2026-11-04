@@ -1,15 +1,36 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import Base, engine
 from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications
+
+logger = logging.getLogger("chikoro.security")
 
 
 # Schema changes are managed through reviewed migrations, not implicit startup DDL.
 # Keeping create_all here only supports the existing initial-install workflow; it
 # does not create privileged users or seed credentials.
 Base.metadata.create_all(bind=engine)
+
+# Record the effective DB role without exposing DATABASE_URL or any credentials.
+# This lets operators verify whether the application connection bypasses RLS.
+try:
+    with engine.connect() as connection:
+        role = connection.execute(text("""
+            select current_user,
+                   coalesce((select rolsuper from pg_roles where rolname = current_user), false),
+                   coalesce((select rolbypassrls from pg_roles where rolname = current_user), false)
+        """)).one()
+        logger.info(
+            "database_role_check user=%s superuser=%s bypass_rls=%s",
+            role[0], role[1], role[2],
+        )
+except Exception:
+    logger.exception("database_role_check_failed")
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
