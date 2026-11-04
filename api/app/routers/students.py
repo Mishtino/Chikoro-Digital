@@ -138,6 +138,35 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
     )
 
 
+@router.post("/{student_id}/activation-pin")
+def issue_student_activation_pin(
+    student_id: int,
+    principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')),
+    db: Session = Depends(get_db),
+):
+    sid = principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped administrator access required")
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.school_id == sid,
+        Student.status == "active",
+    ).with_for_update().first()
+    if student is None:
+        raise HTTPException(status_code=404, detail="Active student not found")
+    if student.portal_user_id is None:
+        raise HTTPException(status_code=409, detail="This learner does not have a school-registered portal email")
+    if student.activated_at is not None:
+        raise HTTPException(status_code=409, detail="Student portal is already activated")
+    pin = generate_pin(8)
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
+    student.activation_pin_hash = hash_pin(pin)
+    student.activation_expires_at = expires_at
+    db.commit()
+    write_audit(db, principal, "student.activation.pin.issue", "student", student.id, {"expires_at": expires_at.isoformat()}, school_id=sid)
+    return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
+
+
 @router.post("/{student_id}/guardians/{contact_id}/activation-pin")
 def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = principal.school_id
