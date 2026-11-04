@@ -102,8 +102,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         sid = principal.school_id
     elif payload.student_id:
         student = db.get(Student, payload.student_id)
-        if student is None:
-            raise HTTPException(status_code=404, detail="Student not found")
+        if student is None or student.status != "active":
+            raise HTTPException(status_code=404, detail="Active student not found")
         sid = student.school_id
         if not principal.is_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
             raise HTTPException(status_code=403, detail="Access denied")
