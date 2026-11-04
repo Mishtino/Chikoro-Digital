@@ -24,3 +24,14 @@
 .school-edit-form h2 { margin: 0; }
 .school-edit-form label { color: #52627a; font-size: 12px; font-weight: 700; }
 .school-edit-form input { width: 100%; padding: 10px 12px; border: 1px solid #d7deea; border-radius: 8px; background: #fff; color: #1e293b; }
+
+
+.platform-staff-card form { display: grid; gap: 9px; }
+.platform-staff-card form label { color: #52627a; font-size: 12px; font-weight: 700; }
+.platform-staff-card form input, .platform-staff-card form select { width: 100%; padding: 10px 12px; border: 1px solid #d7deea; border-radius: 8px; background: #fff; color: #1e293b; }
+.platform-staff-list { display: grid; gap: 10px; margin-top: 22px; }
+.platform-staff-list h3 { margin: 0; font-size: 14px; }
+.platform-staff-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #e8edf4; }
+.platform-staff-row > span:first-child { display: grid; gap: 3px; }
+.platform-staff-row small { color: #64748b; font-size: 12px; }
+.staff-role-label { border-radius: 999px; padding: 5px 9px; background: #eef2f7; color: #344256; font-size: 11px; text-transform: capitalize; }
