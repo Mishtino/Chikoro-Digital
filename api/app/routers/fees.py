@@ -120,10 +120,19 @@ def list_fee_items(school_id: Optional[int] = Query(None), principal: SupabasePr
 @router.post("/fee-structures", status_code=status.HTTP_201_CREATED)
 def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    if db.query(Term).filter(Term.id == payload.term_id, Term.school_id == sid).first() is None:
+        raise HTTPException(status_code=404, detail="Term not found in this school")
+    if not payload.items:
+        raise HTTPException(status_code=422, detail="At least one fee item is required")
+    for item in payload.items:
+        if float(item.get("amount", 0)) <= 0:
+            raise HTTPException(status_code=422, detail="Fee amounts must be positive")
+        fee_item_id = item.get("fee_item_id")
+        if fee_item_id is not None and db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first() is None:
+            raise HTTPException(status_code=404, detail="Fee item not found in this school")
     fs = FeeStructure(school_id=sid, term_id=payload.term_id, form=payload.form, name=payload.name)
     db.add(fs)
-    db.commit()
-    db.refresh(fs)
+    db.flush()
     for it in payload.items:
         line = FeeStructureItem(
             school_id=sid,
@@ -135,6 +144,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
         )
         db.add(line)
     db.commit()
+    db.refresh(fs)
     write_audit(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
     return {"id": fs.id}
 
