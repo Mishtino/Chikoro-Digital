@@ -16,7 +16,7 @@ from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 from app.models.paynow import PaynowAttempt
 from app.services.crypto import encrypt, decrypt
 from app.services.paynow import initiate_transaction, poll_transaction, verify_hash
-from app.services.money import invoice_balance, student_balance
+from app.services.money import invoice_balance
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/paynow", tags=["paynow"])
@@ -36,6 +36,11 @@ class PaynowInitiateRequest(BaseModel):
     school_id: Optional[int] = None
     return_url: Optional[str] = None
     result_url: Optional[str] = None
+
+
+def _student_usd_balance(db: Session, school_id: int, student_id: int) -> float:
+    invoices = db.query(Invoice).filter(Invoice.school_id == school_id, Invoice.student_id == student_id, Invoice.currency == "USD", Invoice.status != "void").all()
+    return sum(float(invoice_balance(db, invoice)) for invoice in invoices)
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
@@ -122,6 +127,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid, Invoice.status != 'void').first()
         if selected_invoice is None:
             raise HTTPException(status_code=404, detail="Invoice not found in this school")
+        if selected_invoice.currency != "USD":
+            raise HTTPException(status_code=422, detail="Paynow checkout currently supports USD invoices only")
         if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
             raise HTTPException(status_code=422, detail="Invoice does not belong to the selected student")
         payload.student_id = selected_invoice.student_id
@@ -136,7 +143,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
             raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
         if payload.invoice_ids and amount > float(invoice_balance(db, selected_invoice)):
             raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
-        if not payload.invoice_ids and payload.student_id and amount > float(student_balance(db, sid, payload.student_id)):
+        if not payload.invoice_ids and payload.student_id and amount > _student_usd_balance(db, sid, payload.student_id):
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student balance")
     elif payload.invoice_ids:
         invoices = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids), Invoice.school_id == sid).all()
