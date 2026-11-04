@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.payment import Invoice, InvoiceLine, Payment, PaymentAllocation, Receipt
 from app.models.student import Student
 from app.services.money import allocate_payment, invoice_balance, student_balance, to_decimal
@@ -29,7 +29,7 @@ class VoidRequest(BaseModel):
     reason: str
 
 
-def _sid(principal: Principal, requested: Optional[int]) -> int:
+def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
@@ -40,7 +40,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def record_payment(payload: PaymentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
     student = db.get(Student, payload.student_id)
     if student is None or student.school_id != sid:
@@ -70,7 +70,7 @@ def record_payment(payload: PaymentCreate, principal: Principal = Depends(get_cu
         "allocated": True,
     }
 @router.get("")
-def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -94,7 +94,7 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 
 @router.post("/{payment_id}/void")
-def void_payment(payment_id: int, payload: VoidRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     payment = db.get(Payment, payment_id)
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -114,7 +114,7 @@ invoices_router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 
 @invoices_router.get("")
-def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -142,7 +142,7 @@ def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 
 @invoices_router.get("/{invoice_id}")
-def get_invoice(invoice_id: int, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def get_invoice(invoice_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     inv = db.get(Invoice, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
