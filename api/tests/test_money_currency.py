@@ -84,3 +84,39 @@ def test_invoice_balance_ignores_mismatched_currency_allocations(db_session):
     db_session.commit()
 
     assert invoice_balance(db_session, usd) == Decimal("100.00")
+
+
+def test_invoice_balance_ignores_allocations_from_another_school(db_session):
+    school, student, usd, _ = _records(db_session)
+    foreign_school = School(code="MONEY2", name="Foreign Money School")
+    db_session.add(foreign_school)
+    db_session.flush()
+    foreign_student = Student(
+        school_id=foreign_school.id,
+        student_number="M002",
+        first_name="Foreign",
+        last_name="Learner",
+        status="active",
+    )
+    db_session.add(foreign_student)
+    db_session.flush()
+    foreign_payment = Payment(
+        school_id=foreign_school.id,
+        student_id=foreign_student.id,
+        amount=Decimal("40.00"),
+        currency="USD",
+        method="cash",
+    )
+    db_session.add(foreign_payment)
+    db_session.flush()
+    # Simulate a malformed cross-tenant allocation row. The invoice balance
+    # must not treat another school's payment as money received by this school.
+    db_session.add(PaymentAllocation(
+        school_id=school.id,
+        payment_id=foreign_payment.id,
+        invoice_id=usd.id,
+        amount=Decimal("40.00"),
+    ))
+    db_session.commit()
+
+    assert invoice_balance(db_session, usd) == Decimal("100.00")
