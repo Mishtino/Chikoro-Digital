@@ -1,5 +1,6 @@
 import hmac
 import secrets
+import hashlib
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
@@ -98,6 +99,17 @@ def activate_parent_account(
     if not auth_user or not auth_user["email"] or auth_user["email_confirmed_at"] is None:
         raise HTTPException(status_code=403, detail="Verify your email address before activating the parent portal")
 
+    email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
+    failed_attempts = db.execute(text("""
+        SELECT count(*) FROM public.audit_logs
+        WHERE action = 'guardian.activation.failed'
+          AND entity_type = 'guardian_email_hash'
+          AND entity_id = :email_hash
+          AND created_at > now() - interval '1 hour'
+    """), {"email_hash": email_hash}).scalar_one()
+    if failed_attempts >= 5:
+        raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
+
     contacts = db.execute(text("""
         SELECT c.id, c.student_id, c.school_id, c.name, c.guardian_activation_pin_hash
         FROM public.contacts AS c
@@ -111,6 +123,11 @@ def activate_parent_account(
     """), {"email": auth_user["email"]}).mappings().all()
     matches = [row for row in contacts if verify_pin(payload.pin, row["guardian_activation_pin_hash"])]
     if len(matches) != 1:
+        db.execute(text("""
+            INSERT INTO public.audit_logs (action, entity_type, entity_id, details, created_at)
+            VALUES ('guardian.activation.failed', 'guardian_email_hash', :email_hash, '{}'::jsonb, now())
+        """), {"email_hash": email_hash})
+        db.commit()
         raise HTTPException(status_code=403, detail="Activation PIN is invalid, expired, or not uniquely assigned")
     contact = matches[0]
 
@@ -171,6 +188,10 @@ def activate_parent_account(
             verified_email = true
         WHERE id = :contact_id AND school_id = :school_id
     """), {"contact_id": contact["id"], "school_id": contact["school_id"]})
+    db.execute(text("""
+        INSERT INTO public.audit_logs (school_id, actor_user_id, action, entity_type, entity_id, details, created_at)
+        VALUES (:school_id, :user_id, 'guardian.activation.succeeded', 'guardian_contact', :contact_id, '{}'::jsonb, now())
+    """), {"school_id": contact["school_id"], "user_id": local_user.id, "contact_id": str(contact["id"])})
     db.commit()
     return {"message": "Parent account activated and linked to the verified learner."}
 
