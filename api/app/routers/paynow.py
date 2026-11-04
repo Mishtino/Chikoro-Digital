@@ -323,6 +323,10 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
             attempt = db.query(PaynowAttempt).filter(PaynowAttempt.poll_url == poll_url).with_for_update().first()
     if attempt is None:
         return {"status": "ignored"}
+    # A late cancellation/failure notification must never downgrade a
+    # successfully settled checkout.
+    if attempt.status == "paid":
+        return {"status": "already paid"}
 
     school = db.get(School, attempt.school_id)
     if school is None or not school.paynow_integration_key:
