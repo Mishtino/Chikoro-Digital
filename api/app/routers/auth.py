@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.student import Student
 from app.schemas import auth as schemas
 from app.services.auth import verify_password, create_access_token
+from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,4 +50,16 @@ def me(principal: Principal = Depends(get_current_principal), db: Session = Depe
         "role": user.role,
         "school_id": user.school_id,
         "is_admin": user.is_admin,
+    }
+
+
+@router.get("/supabase/me")
+def supabase_me(principal: SupabasePrincipal = Depends(get_supabase_principal)):
+    """Return the server-resolved identity for a verified Supabase session."""
+    return {
+        "auth_user_id": str(principal.auth_user_id),
+        "id": principal.user_id,
+        "school_id": principal.school_id,
+        "role": principal.role,
+        "is_admin": principal.is_admin,
     }
