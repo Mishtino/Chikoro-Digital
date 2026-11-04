@@ -29,6 +29,11 @@ class VoidRequest(BaseModel):
     reason: str
 
 
+def _require_finance_role(principal: Principal) -> None:
+    if not principal.is_admin and principal.role not in ("owner", "headmaster", "bursar"):
+        raise HTTPException(status_code=403, detail="Finance role required")
+
+
 def _sid(principal: Principal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
@@ -41,6 +46,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def record_payment(payload: PaymentCreate, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_finance_role(principal)
     sid = _sid(principal, payload.school_id)
     student = db.get(Student, payload.student_id)
     if student is None or student.school_id != sid:
@@ -71,6 +77,7 @@ def record_payment(payload: PaymentCreate, principal: Principal = Depends(get_cu
     }
 @router.get("")
 def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_finance_role(principal)
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -95,6 +102,7 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @router.post("/{payment_id}/void")
 def void_payment(payment_id: int, payload: VoidRequest, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_finance_role(principal)
     payment = db.get(Payment, payment_id)
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -115,6 +123,7 @@ invoices_router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 @invoices_router.get("")
 def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_finance_role(principal)
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -143,6 +152,7 @@ def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @invoices_router.get("/{invoice_id}")
 def get_invoice(invoice_id: int, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    _require_finance_role(principal)
     inv = db.get(Invoice, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")

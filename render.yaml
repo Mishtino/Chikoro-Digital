@@ -1,60 +1,36 @@
 services:
   - type: web
-    name: chikoro-api
-    env: python
+    name: Chikoro-Digital
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: api
     healthCheckPath: /health
     buildCommand: pip install -r requirements.txt
-    startCommand: cd api && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: APP_NAME
         value: Chikoro Digital API
       - key: PYTHON_VERSION
-        value: "3.14.8"
-
+        value: "3.12.10"
       - key: ENV
         value: production
       - key: DEBUG
         value: "false"
       - key: DATABASE_URL
-        fromDatabase:
-          name: chikoro-db
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
+      - key: SUPABASE_URL
+        value: https://xivzduvqpuqbecskxaoj.supabase.co
+      # Publishable key is safe for the Auth /user verification endpoint.
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_SMBhjX7arcnOBKSaejitYA_NgXb2t74
       - key: CORS_ORIGINS
-        value: https://chikoro-web.onrender.com,https://chikoro-admin.onrender.com
-
-  - type: web
-    name: chikoro-web
-    env: node
-    buildCommand: cd web && npm install && npm run build
-    startCommand: cd web && npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://chikoro-api.onrender.com
-
-  - type: web
-    name: chikoro-admin
-    env: node
-    buildCommand: cd admin && npm install && npm run build
-    startCommand: cd admin && npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://chikoro-api.onrender.com
-
-  - type: worker
-    name: chikoro-worker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python worker/worker.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.14.8"
-
-
-databases:
-  - name: chikoro-db
-    databaseName: chikoro
-    user: chikoro
+        value: https://chikoro-digital-d9ge.vercel.app,https://chikoro-digital-d9ge-vortex-technologies.vercel.app,https://chikoro-digital.vercel.app,https://chikoro-digital-vortex-technologies.vercel.app
+      - key: PAYNOW_RETURN_URL
+        value: https://chikoro-digital-d9ge.vercel.app/paynow/return
+      - key: PAYNOW_RESULT_URL
+        value: https://chikoro-digital.onrender.com/paynow/webhook

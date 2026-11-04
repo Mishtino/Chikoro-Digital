@@ -10,19 +10,28 @@ from app.services.auth import hash_password
 
 Base.metadata.create_all(bind=engine)
 
-# bootstrap system owner account (change password after first login)
-_db = SessionLocal()
-try:
-    if not _db.query(User).filter(User.email == "vortextech.co.zw").first():
-        _db.add(User(email="vortextech.co.zw", full_name="Vortex Technologies", password_hash=hash_password("Rhoda2003@ig"), role="admin", is_admin=True, school_id=None))
-        _db.commit()
-finally:
-    _db.close()
+# Optional first-install bootstrap. Credentials must be provided through the
+# deployment's secret environment variables; no usable default account exists.
+if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
+    _db = SessionLocal()
+    try:
+        if not _db.query(User).filter(User.email == settings.bootstrap_admin_email).first():
+            _db.add(User(
+                email=settings.bootstrap_admin_email,
+                full_name="Vortex Technologies",
+                password_hash=hash_password(settings.bootstrap_admin_password),
+                role="admin",
+                is_admin=True,
+                school_id=None,
+            ))
+            _db.commit()
+    finally:
+        _db.close()
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
-origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+origins = [o.strip().rstrip("/") for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -30,6 +39,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root():
+    # Render's default health probe checks / unless a custom health path is set.
+    return {"status": "ok", "app": settings.app_name}
 
 
 @app.get("/health")
