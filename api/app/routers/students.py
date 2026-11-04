@@ -154,6 +154,7 @@ def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: S
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
     db.execute(text("UPDATE public.contacts SET guardian_activation_pin_hash=:pin_hash, guardian_activation_expires_at=:expires_at WHERE id=:id AND student_id=:student_id AND school_id=:school_id"), {"pin_hash": hash_pin(pin), "expires_at": expires_at, "id": contact_id, "student_id": student_id, "school_id": sid})
     db.commit()
+    write_audit(db, principal, "guardian.activation.pin.issue", "guardian_contact", contact_id, {"expires_at": expires_at.isoformat()}, school_id=sid)
     return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
 
