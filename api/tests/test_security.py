@@ -297,3 +297,111 @@ def test_inactive_student_cannot_activate_portal_account(client, db_session):
     db_session.refresh(student)
     assert student.portal_user_id is None
     assert student.activation_pin_hash is not None
+
+
+def test_guardian_activation_requires_verified_email_and_school_pin(client, db_session):
+    import uuid
+    from app import deps
+    from app.models.profile import Profile
+    from app.models.guardian_link import GuardianLink
+    from app.models.student import Contact
+    from app.services.ids import hash_pin
+
+    school = School(code="GRD001", name="Guardian School")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id,
+        student_number="GRD00100001",
+        first_name="Learner",
+        last_name="One",
+    )
+    db_session.add(student)
+    db_session.flush()
+    contact = Contact(
+        school_id=school.id,
+        student_id=student.id,
+        name="Guardian One",
+        relationship="parent",
+        email="guardian@example.test",
+        verified_email=False,
+        guardian_activation_pin_hash=hash_pin("654321"),
+    )
+    db_session.add(contact)
+    db_session.commit()
+
+    auth_user_id = str(uuid.uuid4())
+    from app.main import app
+    app.dependency_overrides[deps.get_supabase_auth_identity] = lambda: {
+        "id": auth_user_id,
+        "email": "guardian@example.test",
+        "email_confirmed_at": "2026-11-04T08:00:00Z",
+    }
+
+    try:
+        response = client.post(
+            "/portal/guardian/register",
+            json={"school_code": "GRD001", "contact_id": contact.id, "pin": "654321"},
+        )
+    finally:
+        app.dependency_overrides.pop(deps.get_supabase_auth_identity, None)
+
+    assert response.status_code == 201
+    profile = db_session.get(Profile, auth_user_id)
+    assert profile is not None
+    assert profile.role == "parent"
+    assert profile.is_active is True
+    link = db_session.query(GuardianLink).filter_by(profile_id=auth_user_id, contact_id=contact.id).one()
+    assert link.is_active is True
+    db_session.refresh(contact)
+    assert contact.verified_email is True
+    assert contact.guardian_activation_pin_hash is None
+
+
+def test_guardian_activation_rejects_email_mismatch(client, db_session):
+    import uuid
+    from app import deps
+    from app.models.student import Contact
+    from app.services.ids import hash_pin
+
+    school = School(code="GRD002", name="Guardian School Two")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id,
+        student_number="GRD00200001",
+        first_name="Learner",
+        last_name="Two",
+    )
+    db_session.add(student)
+    db_session.flush()
+    contact = Contact(
+        school_id=school.id,
+        student_id=student.id,
+        name="Guardian Two",
+        email="guardian-two@example.test",
+        guardian_activation_pin_hash=hash_pin("123456"),
+    )
+    db_session.add(contact)
+    db_session.commit()
+
+    auth_user_id = str(uuid.uuid4())
+    from app.main import app
+    app.dependency_overrides[deps.get_supabase_auth_identity] = lambda: {
+        "id": auth_user_id,
+        "email": "attacker@example.test",
+        "email_confirmed_at": "2026-11-04T08:00:00Z",
+    }
+
+    try:
+        response = client.post(
+            "/portal/guardian/register",
+            json={"school_code": "GRD002", "contact_id": contact.id, "pin": "123456"},
+        )
+    finally:
+        app.dependency_overrides.pop(deps.get_supabase_auth_identity, None)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Your confirmed email does not match the guardian contact held by the school."
+    db_session.refresh(contact)
+    assert contact.guardian_activation_pin_hash is not None
