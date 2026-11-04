@@ -119,7 +119,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     if payload.invoice_ids and len(set(payload.invoice_ids)) != 1:
         raise HTTPException(status_code=422, detail="Paynow checkout currently supports one invoice at a time")
     if payload.invoice_ids:
-        selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid).first()
+        selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid, Invoice.status != 'void').first()
         if selected_invoice is None:
             raise HTTPException(status_code=404, detail="Invoice not found in this school")
         if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
@@ -164,8 +164,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     db.add(attempt)
     db.flush()
 
-    return_url = payload.return_url or settings.paynow_return_url
-    result_url = payload.result_url or settings.paynow_result_url
+    return_url = settings.paynow_return_url
+    result_url = settings.paynow_result_url
 
     resp = initiate_transaction(
         integration_id=school.paynow_integration_id,
