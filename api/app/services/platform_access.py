@@ -10,6 +10,7 @@ from app.deps_supabase import SupabasePrincipal, get_supabase_principal
 ROLE_PERMISSIONS = {
     "vortex_admin": frozenset({
         "platform:access:read",
+        "platform:staff:write",
         "schools:read",
         "schools:write",
         "schools:lifecycle",
