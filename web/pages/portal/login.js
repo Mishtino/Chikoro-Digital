@@ -46,7 +46,7 @@ export default function PortalLogin() {
           <button className="auth-button" type="submit" disabled={loading}>{loading ? 'Signing you in…' : 'Sign in to portal'}</button>
         </form>
         <div className="auth-divider"></div>
-        <div className="auth-links"><span>New to the portal? <a href="/portal/register">Activate account</a></span><a href="/">Change school</a></div>
+        <div className="auth-links"><span>New here? <a href="/portal/student-register">Student activation</a> · <a href="/portal/register">Parent activation</a></span><a href="/">Change school</a></div>
         <p className="auth-note">Your school-issued details are used to activate your account. If you need help, contact your school administrator.</p>
       </div></section>
     </main>
