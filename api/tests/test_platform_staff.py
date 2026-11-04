@@ -31,6 +31,7 @@ def _install_sqlite_profiles(db_session, monkeypatch):
             updated_at TEXT
         )
     """))
+    db_session.execute(sql_text("DELETE FROM profiles"))
     import app.routers.platform_staff as staff_router
     monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     original_text = staff_router.text
