@@ -29,6 +29,7 @@ def bootstrap_first_admin(
     if not setup_token or not hmac.compare_digest(setup_token, configured_token):
         raise HTTPException(status_code=401, detail="Invalid bootstrap credentials")
 
+    db.execute(text("LOCK TABLE public.profiles IN EXCLUSIVE MODE"))
     profile_count = db.execute(text("SELECT count(*) FROM public.profiles")).scalar_one()
     if profile_count:
         raise HTTPException(status_code=409, detail="Bootstrap is closed because a profile already exists")
@@ -36,7 +37,7 @@ def bootstrap_first_admin(
     admins = db.execute(text("""
         SELECT id, email, role, school_id, is_active, is_admin
         FROM public.users
-        WHERE is_admin = true AND role = 'admin' AND is_active = true
+        WHERE is_admin = true AND role = 'admin' AND is_active = true AND school_id IS NULL
         ORDER BY id
         LIMIT 2
     """)).mappings().all()
@@ -54,12 +55,16 @@ def bootstrap_first_admin(
     if len(auth_user) != 1:
         raise HTTPException(status_code=409, detail="Create and verify the matching administrator account in Supabase Auth first")
 
-    db.execute(text("""
+    result = db.execute(text("""
         INSERT INTO public.profiles
             (id, local_user_id, role, school_id, is_active, created_at, updated_at)
         VALUES
             (CAST(:auth_id AS uuid), :local_user_id, 'admin', NULL, true, now(), now())
+        ON CONFLICT DO NOTHING
     """), {"auth_id": str(auth_user[0][0]), "local_user_id": admin["id"]})
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Administrator identity is already linked")
     db.commit()
     return {"message": "The verified platform administrator identity has been linked. You can now sign in."}
 
