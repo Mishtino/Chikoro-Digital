@@ -48,6 +48,9 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         raise HTTPException(status_code=404, detail="Student not found")
     if not math.isfinite(payload.amount) or payload.amount <= 0:
         raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
+    currency = currency
+    if len(currency) != 3 or not currency.isalpha():
+        raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
     if payload.invoice_ids:
         requested_ids = set(payload.invoice_ids)
         if len(requested_ids) != len(payload.invoice_ids):
