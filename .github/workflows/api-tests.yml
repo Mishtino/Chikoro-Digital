@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "api/**"
+      - "web/**"
+      - "admin/**"
       - ".github/workflows/api-tests.yml"
   pull_request:
     paths:
