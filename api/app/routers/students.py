@@ -78,6 +78,7 @@ def create_student(payload: StudentCreate, principal: Principal = Depends(get_cu
     db.add(student)
     db.commit()
     db.refresh(student)
+    guardian_contact_id = None
     if payload.guardian_name or payload.guardian_phone or payload.guardian_email:
         contact = Contact(
             school_id=sid,
@@ -88,6 +89,8 @@ def create_student(payload: StudentCreate, principal: Principal = Depends(get_cu
             is_primary=True,
         )
         db.add(contact)
+        db.flush()
+        guardian_contact_id = contact.id
         db.commit()
     write_audit(db, principal, "student.create", "student", student.id, {"number": number}, school_id=sid)
     result = StudentCreateResult(
@@ -100,6 +103,7 @@ def create_student(payload: StudentCreate, principal: Principal = Depends(get_cu
         status=student.status,
         activated=bool(student.activated_at),
         pin=pin,
+        guardian_contact_id=guardian_contact_id,
     )
     return result
 
