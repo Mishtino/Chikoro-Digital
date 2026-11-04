@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Chikoro Digital API"
     env: str = "development"
-    debug: bool = True
+    debug: bool = False
     database_url: str = "sqlite:///./chikoro.db"
     secret_key: str = "change-me-in-production-please"
     access_token_expire_minutes: int = 60 * 8
