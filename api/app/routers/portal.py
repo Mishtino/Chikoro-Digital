@@ -9,7 +9,7 @@ from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 from app.models.student import Student, Contact
 from app.models.payment import Invoice
-from app.services.money import invoice_balance, student_balance
+from app.services.money import invoice_balance
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
