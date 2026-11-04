@@ -66,3 +66,24 @@ def test_paid_confirmation_must_match_local_reference_and_amount():
     assert not _verified_paid_confirmation(
         {"hash_verified": True, "reference": "PN-EXPECTED"}, attempt
     )
+
+@pytest.mark.parametrize("url", [
+    "https://paynow.co.zw/Payment/123",
+    "https://www.paynow.co.zw/Payment/123",
+    "https://secure.paynow.co.zw/Payment/123",
+])
+def test_browser_url_accepts_known_paynow_hosts(url):
+    from app.services.paynow import _validate_browser_url
+    assert _validate_browser_url(url) == url
+
+
+@pytest.mark.parametrize("url", [
+    "https://checkout.paynow.co.zw/Payment/123",
+    "https://paynow.co.zw.evil.example/Payment/123",
+    "http://www.paynow.co.zw/Payment/123",
+    "https://user@www.paynow.co.zw/Payment/123",
+])
+def test_browser_url_rejects_untrusted_destinations(url):
+    from app.services.paynow import _validate_browser_url
+    with pytest.raises(ValueError):
+        _validate_browser_url(url)
