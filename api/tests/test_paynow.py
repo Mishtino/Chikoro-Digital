@@ -97,7 +97,7 @@ def test_duplicate_paid_paynow_webhooks_create_one_payment_allocation_and_receip
 
     monkeypatch.setattr(
         paynow, "poll_transaction",
-        lambda _url, _key: {"Status": "Paid", "hash_verified": True},
+        lambda _url, _key: {"Status": "Paid", "reference": "PN-DUPLICATE-1", "amount": "25.00", "hash_verified": True},
     )
 
     first = client.post("/paynow/webhook", data={"reference": attempt.reference})
@@ -257,7 +257,7 @@ def test_reconcile_paid_attempt_creates_one_payment_and_receipt(
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     monkeypatch.setattr(
         paynow_service, "poll_transaction",
-        lambda _url, _key: {"Status": "Paid", "hash_verified": True},
+        lambda _url, _key: {"Status": "Paid", "reference": "PN-RECONCILE-1", "amount": "30.00", "hash_verified": True},
     )
 
     first = client.post("/paynow/reconcile")
@@ -319,8 +319,8 @@ def test_reconcile_retries_unverified_attempt_until_hash_is_verified(
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     poll_results = iter([
-        {"Status": "Paid", "hash_verified": False},
-        {"Status": "Paid", "hash_verified": True},
+        {"Status": "Paid", "reference": "PN-RETRY-1", "amount": "15.00", "hash_verified": False},
+        {"Status": "Paid", "reference": "PN-RETRY-1", "amount": "15.00", "hash_verified": True},
     ])
     monkeypatch.setattr(
         paynow_service, "poll_transaction",
