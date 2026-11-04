@@ -244,6 +244,42 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
     }
 
 
+@router.get("/terms")
+def student_published_terms(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    """Return academic terms containing published marks for the authenticated learner only."""
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student portal only")
+    student_rows = db.query(Student).filter(
+        Student.portal_user_id == principal.user_id,
+        Student.school_id == principal.school_id,
+        Student.status == "active",
+    ).all()
+    if len(student_rows) != 1:
+        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
+    student = student_rows[0]
+    from app.models.results import Mark, Assessment
+    from app.models.fee import Term
+
+    terms = db.query(Term).join(
+        Assessment, Assessment.term_id == Term.id
+    ).join(
+        Mark, Mark.assessment_id == Assessment.id
+    ).filter(
+        Term.school_id == student.school_id,
+        Assessment.school_id == student.school_id,
+        Mark.school_id == student.school_id,
+        Mark.student_id == student.id,
+        Mark.status == "published",
+    ).distinct().order_by(
+        Term.academic_year.desc(), Term.start_date.desc(), Term.id.desc()
+    ).all()
+    return {"terms": [
+        {"id": term.id, "name": term.name, "academic_year": term.academic_year,
+         "is_current": bool(term.is_current)}
+        for term in terms
+    ]}
+
+
 @router.get("/results")
 def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     if principal.role != "student":
