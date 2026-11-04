@@ -13,8 +13,8 @@ export default function AdminLogin() {
       if(!accessToken)throw new Error('A secure session could not be created. Please try again.');
       const response=await fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:8000'}/auth/supabase/me`,{headers:{Authorization:`Bearer ${accessToken}`}});
       const profile=await response.json();
-      if(!response.ok)throw new Error(profile.detail||'This account is not activated for administrator access.');
-      if(!profile.is_admin)throw new Error('This account is not authorised for the Vortex control centre.');
+      if(!response.ok){await supabase.auth.signOut();throw new Error(profile.detail||'This account is not activated for administrator access.');}
+      if(!profile.is_admin){await supabase.auth.signOut();throw new Error('This account is not authorised for the Vortex control centre.');}
       router.push('/dashboard');
     }catch(err){setError(err.message);}finally{setLoading(false);}
   }
