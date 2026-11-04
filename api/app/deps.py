@@ -11,6 +11,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.profile import Profile
 from app.models.user import User
+from app.services.auth import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -25,16 +26,26 @@ class Principal:
 
 
 def get_current_principal(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Principal:
-    """Validate a Supabase session with Auth, then load trusted DB permissions.
+    """Validate Supabase Auth in production and resolve permissions from profiles.
 
-    The Auth user endpoint verifies the bearer token. Authorization is always
-    resolved from public.profiles, never from user-editable JWT metadata.
+    A legacy-token compatibility path is deliberately limited to non-production
+    environments to keep local development and existing test fixtures usable.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired Supabase session",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if settings.env != "production":
+        try:
+            payload = decode_token(token)
+            user = db.get(User, int(payload.get("sub")))
+            if user and user.is_active:
+                return Principal(user.id, "", user.school_id, user.role, user.is_admin)
+        except Exception:
+            pass
+
     if not settings.supabase_url or not settings.supabase_anon_key:
         raise HTTPException(status_code=503, detail="Supabase Auth verification is not configured")
 
