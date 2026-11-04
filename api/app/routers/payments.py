@@ -11,7 +11,7 @@ from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.payment import Invoice, InvoiceLine, Payment, PaymentAllocation, Receipt
 from app.models.student import Student
 from app.models.school import School
-from app.services.money import allocate_payment, invoice_balance, to_decimal
+from app.services.money import allocate_payment, invoice_balance, next_receipt_number, to_decimal
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -100,8 +100,11 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     db.add(payment)
     db.flush()
     allocate_payment(db, payment, payload.invoice_ids)
-    count = db.query(Receipt).filter(Receipt.school_id == sid).count()
-    receipt = Receipt(school_id=sid, payment_id=payment.id, receipt_number=f"RCP-{count + 1:05d}")
+    receipt = Receipt(
+        school_id=sid,
+        payment_id=payment.id,
+        receipt_number=next_receipt_number(db, sid),
+    )
     db.add(receipt)
     db.commit()
     db.refresh(payment)
