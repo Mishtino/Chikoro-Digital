@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_principal, Principal
+from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.notification import Notification
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-def _sid(principal: Principal, requested: Optional[int]) -> int:
+def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
     if principal.is_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
@@ -21,7 +21,7 @@ def _sid(principal: Principal, requested: Optional[int]) -> int:
 
 
 @router.get("")
-def list_notifications(school_id: Optional[int] = Query(None), status_filter: Optional[str] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_notifications(school_id: Optional[int] = Query(None), status_filter: Optional[str] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -32,7 +32,7 @@ def list_notifications(school_id: Optional[int] = Query(None), status_filter: Op
 
 
 @router.post("/process")
-def process_notifications(principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def process_notifications(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     if not principal.is_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
     queued = db.query(Notification).filter(Notification.status == "queued").all()
