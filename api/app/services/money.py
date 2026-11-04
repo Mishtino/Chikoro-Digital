@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -18,7 +18,7 @@ def is_valid_payment_amount(value) -> bool:
             and amount > 0
             and amount == amount.quantize(Decimal("0.01"))
         )
-    except Exception:
+    except (InvalidOperation, ValueError, TypeError):
         return False
 
 
