@@ -103,7 +103,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
 
 
 @router.get("", response_model=List[StudentOut])
-def list_students(school_id: Optional[int] = Query(None), principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def list_students(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
     sid = _school_id(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -124,7 +124,7 @@ def list_students(school_id: Optional[int] = Query(None), principal: Principal =
 
 
 @router.get("/{student_id}")
-def get_student(student_id: int, principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
