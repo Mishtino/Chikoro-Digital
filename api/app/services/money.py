@@ -15,6 +15,7 @@ def invoice_paid_amount(db: Session, invoice_id: int) -> Decimal:
         .join(Payment, Payment.id == PaymentAllocation.payment_id)
         .filter(PaymentAllocation.invoice_id == invoice_id)
         .filter(Payment.voided.is_(False))
+        .filter(Payment.currency == Invoice.currency)
         .scalar()
     )
     return to_decimal(total)
@@ -51,6 +52,7 @@ def allocate_payment(db: Session, payment: Payment, invoice_ids: list[int] | Non
             .filter(
                 Invoice.school_id == payment.school_id,
                 Invoice.student_id == payment.student_id,
+                Invoice.currency == payment.currency,
                 Invoice.status != "void",
             )
             .order_by(Invoice.issued_at.asc(), Invoice.id.asc())
