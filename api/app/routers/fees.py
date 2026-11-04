@@ -128,8 +128,12 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one fee item is required")
     for item in payload.items:
-        if float(item.get("amount", 0)) <= 0:
-            raise HTTPException(status_code=422, detail="Fee amounts must be positive")
+        try:
+            item_amount = float(item.get("amount", 0))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Fee amounts must be valid numbers")
+        if not math.isfinite(item_amount) or item_amount <= 0:
+            raise HTTPException(status_code=422, detail="Fee amounts must be finite positive values")
         fee_item_id = item.get("fee_item_id")
         if fee_item_id is not None and db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first() is None:
             raise HTTPException(status_code=404, detail="Fee item not found in this school")
