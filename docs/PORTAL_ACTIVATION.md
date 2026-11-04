@@ -10,7 +10,7 @@ Chikoro Digital uses Supabase Auth for all portal sign-ins. A confirmed Supabase
 4. The learner enters the PIN at `/portal/activate?type=student`.
 5. The API links the verified Supabase identity to the student profile and consumes the PIN. The learner can then sign in at `/portal/login`.
 
-Student activation PINs expire after 30 days.
+Student activation PINs expire after 30 days. If a PIN expires or is lost, an owner or headmaster can issue a fresh one with `POST /students/{student_id}/activation-pin`.
 
 ## Parent / guardian activation
 
