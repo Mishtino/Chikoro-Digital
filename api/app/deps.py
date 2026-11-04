@@ -1,13 +1,16 @@
 from dataclasses import dataclass
 from typing import Optional
+from uuid import UUID
 
+import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
+from app.models.profile import Profile
 from app.models.user import User
-from app.services.auth import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -15,32 +18,54 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 @dataclass
 class Principal:
     user_id: int
+    auth_user_id: str
     school_id: Optional[int]
     role: str
     is_admin: bool
 
 
 def get_current_principal(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Principal:
+    """Validate a Supabase session with Auth, then load trusted DB permissions.
+
+    The Auth user endpoint verifies the bearer token. Authorization is always
+    resolved from public.profiles, never from user-editable JWT metadata.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="Invalid or expired Supabase session",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Supabase Auth verification is not configured")
+
     try:
-        payload = decode_token(token)
-        user_id = int(payload.get("sub"))
+        response = httpx.get(
+            f"{settings.supabase_url.rstrip('/')}/auth/v1/user",
+            headers={"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}"},
+            timeout=5.0,
+        )
+        if response.status_code != 200:
+            raise credentials_exception
+        auth_user_id = str(UUID(response.json()["id"]))
+    except HTTPException:
+        raise
     except Exception:
         raise credentials_exception
 
-    user = db.get(User, user_id)
+    profile = db.get(Profile, auth_user_id)
+    if profile is None or not profile.is_active or profile.local_user_id is None:
+        raise HTTPException(status_code=403, detail="Account is not provisioned. Contact your school administrator.")
+
+    user = db.get(User, profile.local_user_id)
     if user is None or not user.is_active:
-        raise credentials_exception
+        raise HTTPException(status_code=403, detail="Account is inactive")
 
     return Principal(
         user_id=user.id,
-        school_id=user.school_id,
-        role=user.role,
-        is_admin=user.is_admin,
+        auth_user_id=auth_user_id,
+        school_id=profile.school_id,
+        role=profile.role,
+        is_admin=profile.role == "admin",
     )
 
 
