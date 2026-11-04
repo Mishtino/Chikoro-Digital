@@ -114,6 +114,8 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
             raise HTTPException(status_code=422, detail="Mark score must be finite and within the assessment range")
         existing = db.query(Mark).filter(Mark.school_id == sid, Mark.student_id == e.student_id, Mark.assessment_id == e.assessment_id).first()
         if existing:
+            if existing.status != "draft":
+                raise HTTPException(status_code=409, detail="Approved or published marks cannot be edited")
             existing.score = e.score
             existing.entered_by_user_id = principal.user_id
         else:
@@ -131,6 +133,7 @@ def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal
         raise HTTPException(status_code=404, detail="Assessment not found in this school")
     updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id, Mark.status == "draft").update({"status": "approved"})
     db.commit()
+    write_audit(db, principal, "marks.approve", "assessment", assessment_id, {"count": updated}, school_id=sid)
     return {"approved": updated}
 @router.post("/marks/publish")
 def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
