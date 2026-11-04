@@ -1,6 +1,7 @@
 import re
 import secrets
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -22,6 +23,11 @@ from app.services.supabase_admin import (
 
 router = APIRouter(prefix="/platform/staff", tags=["platform-staff"])
 STAFF_ROLES = {"vortex_support", "vortex_auditor", "vortex_billing"}
+
+
+class StaffStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_active: bool
 
 
 class StaffInviteRequest(BaseModel):
@@ -75,7 +81,7 @@ def list_platform_staff(
     if not principal.is_platform_admin:
         raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
     rows = db.execute(text("""
-        SELECT p.id AS auth_user_id, u.email, u.full_name, p.role, p.is_active
+        SELECT p.id AS auth_user_id, u.email, u.full_name, p.role, (p.is_active AND u.is_active) AS is_active
         FROM public.profiles AS p
         JOIN public.users AS u ON u.id = p.local_user_id
         WHERE p.school_id IS NULL
@@ -161,4 +167,60 @@ def invite_platform_staff(
         "message": "Invitation sent. The staff member must accept the email invitation before signing in.",
         "email": payload.email,
         "role": payload.role,
+    }
+
+ 
+@router.patch("/{auth_user_id}/status")
+def update_platform_staff_status(
+    auth_user_id: UUID,
+    payload: StaffStatusRequest,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    """Enable or disable a non-owner platform staff identity in the trusted bridge."""
+    if not principal.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
+
+    row = db.execute(text("""
+        SELECT p.local_user_id, p.role, p.school_id, p.is_active,
+               u.is_active AS local_is_active
+        FROM public.profiles AS p
+        JOIN public.users AS u ON u.id = p.local_user_id
+        WHERE p.id = CAST(:auth_id AS uuid)
+        FOR UPDATE
+    """), {"auth_id": str(auth_user_id)}).mappings().first()
+    if not row or row["school_id"] is not None or row["role"] not in {"vortex_support", "vortex_auditor"}:
+        raise HTTPException(status_code=404, detail="Managed platform staff account not found")
+
+    previous_active = bool(row["is_active"] and row["local_is_active"])
+    if previous_active == payload.is_active:
+        return {"auth_user_id": str(auth_user_id), "is_active": previous_active, "message": "No change required"}
+
+    try:
+        db.execute(text("""
+            UPDATE public.profiles
+            SET is_active = :is_active, updated_at = now()
+            WHERE id = CAST(:auth_id AS uuid)
+        """), {"is_active": payload.is_active, "auth_id": str(auth_user_id)})
+        local_user = db.query(User).filter(User.id == row["local_user_id"]).with_for_update().first()
+        if local_user is None or local_user.school_id is not None or local_user.role != row["role"] or local_user.is_admin:
+            raise ValueError("Platform staff identity mismatch")
+        local_user.is_active = payload.is_active
+        db.add(AuditLog(
+            school_id=None,
+            actor_user_id=principal.user_id,
+            action="platform.staff.activated" if payload.is_active else "platform.staff.deactivated",
+            entity_type="platform_staff",
+            entity_id=str(auth_user_id),
+            details={"role": row["role"], "from_active": previous_active, "to_active": payload.is_active},
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Platform staff status could not be updated")
+
+    return {
+        "auth_user_id": str(auth_user_id),
+        "is_active": payload.is_active,
+        "message": "Platform staff access enabled" if payload.is_active else "Platform staff access disabled",
     }
