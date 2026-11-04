@@ -71,3 +71,21 @@ def test_school_user_is_not_platform_staff(client, seed_two_schools):
     assert response.status_code == 200
     assert response.json()["is_platform_staff"] is False
     assert response.json()["permissions"] == []
+
+
+def test_platform_auditor_cannot_read_individual_school_record(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(admin, "vortex_auditor")
+
+    response = client.get(f"/schools/{seed_two_schools['s1'].id}")
+
+    assert response.status_code == 403
+
+
+def test_platform_support_can_read_individual_school_record(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(admin, "vortex_support")
+
+    response = client.get(f"/schools/{seed_two_schools['s1'].id}")
+
+    assert response.status_code == 200
