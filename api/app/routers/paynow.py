@@ -38,6 +38,24 @@ class PaynowInitiateRequest(BaseModel):
     result_url: Optional[str] = None
 
 
+
+def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
+    """Bind a signed Paynow Paid response to the exact local checkout."""
+    if not polled.get("hash_verified"):
+        return False
+    provider_reference = polled.get("reference") or polled.get("Reference")
+    provider_amount = polled.get("amount") or polled.get("Amount")
+    if provider_reference != attempt.reference or provider_amount is None:
+        return False
+    try:
+        from decimal import Decimal, InvalidOperation
+        received = Decimal(str(provider_amount)).quantize(Decimal("0.01"))
+        expected = Decimal(str(attempt.amount)).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+    return received == expected
+
+
 def _student_usd_balance(db: Session, school_id: int, student_id: int) -> float:
     invoices = db.query(Invoice).filter(Invoice.school_id == school_id, Invoice.student_id == student_id, Invoice.currency == "USD", Invoice.status != "void").all()
     return sum(float(invoice_balance(db, invoice)) for invoice in invoices)
@@ -231,7 +249,7 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
 
     status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
 
-    if status_val == "paid" and not attempt.hash_verified:
+    if status_val == "paid" and not _verified_paid_confirmation(polled, attempt):
         attempt.status = "unverified"
         db.commit()
         return {"status": "payment confirmation hash could not be verified"}
@@ -310,7 +328,7 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
         st = (polled.get("Status") or polled.get("status") or "").lower()
-        if st == "paid" and not polled.get("hash_verified"):
+        if st == "paid" and not _verified_paid_confirmation(polled, att):
             att.status = "unverified"
             updated += 1
             continue
