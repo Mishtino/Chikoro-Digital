@@ -143,3 +143,43 @@ def test_bootstrap_admin_refuses_existing_owner(monkeypatch):
         assert exc.status_code == 409
 
     assert not any("INSERT INTO public.profiles" in sql for sql in db.statements)
+
+
+def test_bootstrap_admin_rejects_ambiguous_confirmed_auth_identities(monkeypatch):
+    monkeypatch.setattr(settings, "admin_bootstrap_token", "x" * 48)
+    monkeypatch.setattr(settings, "platform_owner_email", "operator@example.test")
+    db = FakeSession(
+        admins=[_admin()],
+        auth_users=[
+            ("8f0a90a0-9d36-4c95-9e8d-78a9c934c4e2",),
+            ("7e0a90a0-9d36-4c95-9e8d-78a9c934c4e3",),
+        ],
+    )
+
+    try:
+        bootstrap_first_admin(setup_token="x" * 48, db=db)
+        assert False, "Expected ambiguous Auth identities to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+
+    assert not any("INSERT INTO public.profiles" in sql for sql in db.statements)
+    assert db.committed is False
+
+
+def test_bootstrap_admin_rejects_conflicting_existing_profile_link(monkeypatch):
+    monkeypatch.setattr(settings, "admin_bootstrap_token", "x" * 48)
+    monkeypatch.setattr(settings, "platform_owner_email", "operator@example.test")
+    db = FakeSession(
+        admins=[_admin()],
+        auth_users=[("8f0a90a0-9d36-4c95-9e8d-78a9c934c4e2",)],
+        insert_rowcount=0,
+    )
+
+    try:
+        bootstrap_first_admin(setup_token="x" * 48, db=db)
+        assert False, "Expected a conflicting identity link to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+
+    assert db.rolled_back is True
+    assert db.committed is False
