@@ -488,3 +488,35 @@ def test_student_paynow_rejects_ambiguous_active_learner_mapping(client, db_sess
     assert response.status_code == 403
     assert response.json()["detail"] == "Student account is not uniquely linked"
     assert db_session.query(PaynowAttempt).count() == 0
+
+
+def test_student_paynow_rejects_active_and_inactive_duplicate_mappings(client, db_session):
+    school = School(code="PN010", name="Historical Paynow Mapping School")
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="historical-paynow@example.test", full_name="Historical Student",
+        password_hash="unused", role="student", school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.add_all([
+        Student(
+            school_id=school.id, student_number="PN-H1", first_name="Active",
+            last_name="Learner", status="active", portal_user_id=user.id,
+        ),
+        Student(
+            school_id=school.id, student_number="PN-H2", first_name="Inactive",
+            last_name="Learner", status="inactive", portal_user_id=user.id,
+        ),
+    ])
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _student_principal(
+        user.id, school.id
+    )
+    response = client.post("/paynow/initiate", json={"amount": 1})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Student account is not uniquely linked"
+    assert db_session.query(PaynowAttempt).count() == 0
