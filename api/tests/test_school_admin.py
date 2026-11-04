@@ -65,3 +65,22 @@ def test_school_creation_is_platform_admin_only(client, seed_two_schools):
     })
 
     assert response.status_code == 403
+
+
+def test_school_creation_rejects_blank_name(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(),
+        user_id=admin.id,
+        school_id=None,
+        role="admin",
+        is_admin=True,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    response = client.post("/schools", json={
+        "code": "BLANK-NAME",
+        "name": "   ",
+    })
+
+    assert response.status_code == 422
