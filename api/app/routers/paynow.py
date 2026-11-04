@@ -15,7 +15,7 @@ from app.models.student import Student
 from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
 from app.models.paynow import PaynowAttempt
 from app.services.crypto import encrypt, decrypt
-from app.services.paynow import initiate_transaction, poll_transaction, verify_hash
+from app.services.paynow import initiate_transaction, poll_transaction, verify_hash, _validate_poll_url, _validate_browser_url
 from app.services.money import invoice_balance
 from app.services.audit import write_audit
 
@@ -207,9 +207,22 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         db.commit()
         raise HTTPException(status_code=400, detail=resp.get("error") or "Paynow initiation failed")
 
+    browser_url = resp.get("BrowserUrl") or resp.get("browserurl")
+    poll_url = resp.get("PollUrl") or resp.get("pollurl")
+    try:
+        if not browser_url or not poll_url:
+            raise ValueError("Paynow did not return both checkout and polling URLs")
+        attempt.browser_url = _validate_browser_url(browser_url)
+        attempt.poll_url = _validate_poll_url(poll_url)
+    except ValueError:
+        attempt.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail="Paynow returned an invalid checkout response. Please contact your school before retrying.",
+        )
+
     attempt.status = "sent"
-    attempt.browser_url = resp.get("BrowserUrl") or resp.get("browserurl")
-    attempt.poll_url = resp.get("PollUrl") or resp.get("pollurl")
     attempt.hash_verified = bool(resp.get("hash_verified"))
     db.commit()
 
