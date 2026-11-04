@@ -116,3 +116,21 @@ def test_resolve_profile_rejects_legacy_admin_profile_role():
         resolve_profile(FakeSession(row), {"sub": str(row["id"])})
 
     assert exc.value.status_code == 403
+
+
+def test_resolve_profile_rejects_school_scoped_global_admin_flag():
+    row = {
+        "id": uuid4(),
+        "local_user_id": 1,
+        "role": "admin",
+        "school_id": 4,
+        "is_active": True,
+        "local_user_role": "admin",
+        "local_school_id": 4,
+        "is_admin": True,
+        "local_user_is_active": True,
+    }
+    with pytest.raises(HTTPException) as exc:
+        resolve_profile(FakeSession(row), {"sub": str(row["id"])})
+
+    assert exc.value.status_code == 403
