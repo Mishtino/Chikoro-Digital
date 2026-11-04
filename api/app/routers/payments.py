@@ -11,7 +11,7 @@ from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.payment import Invoice, InvoiceLine, Payment, PaymentAllocation, Receipt
 from app.models.student import Student
 from app.models.school import School
-from app.services.money import allocate_payment, invoice_balance, student_balance, to_decimal
+from app.services.money import allocate_payment, invoice_balance, to_decimal
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/payments", tags=["payments"])
