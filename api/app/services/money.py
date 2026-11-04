@@ -40,7 +40,7 @@ def allocate_payment(db: Session, payment: Payment, invoice_ids: list[int] | Non
     remaining = to_decimal(payment.amount)
     if invoice_ids:
         invoices = db.query(Invoice).filter(
-            Invoice.id.in_(invoice_ids), Invoice.school_id == payment.school_id, Invoice.student_id == payment.student_id
+            Invoice.id.in_(invoice_ids), Invoice.school_id == payment.school_id, Invoice.student_id == payment.student_id, Invoice.status != "void"
         ).all()
     else:
         invoices = (
