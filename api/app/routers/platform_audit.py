@@ -9,6 +9,7 @@ from app.deps_supabase import SupabasePrincipal, get_supabase_principal
 from app.models.audit import AuditLog
 from app.models.school import School
 from app.models.user import User
+from app.services.platform_access import require_platform_permission
 
 router = APIRouter(prefix="/platform/audit-logs", tags=["platform-audit"])
 
@@ -42,12 +43,9 @@ def list_platform_audit_logs(
     offset: int = Query(default=0, ge=0, le=100000),
     action: Optional[str] = Query(default=None, min_length=1, max_length=100),
     school_id: Optional[int] = Query(default=None, ge=1),
-    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    principal: SupabasePrincipal = Depends(require_platform_permission("audit:read")),
     db: Session = Depends(get_db),
 ):
-    if not principal.is_platform_admin:
-        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
-
     query = (
         db.query(AuditLog, User.full_name, User.email, School.name)
         .outerjoin(User, AuditLog.actor_user_id == User.id)
