@@ -42,6 +42,7 @@ class StudentOut(BaseModel):
 
 class StudentCreateResult(StudentOut):
     pin: str
+    guardian_contact_id: Optional[int] = None
 
 
 def _school_id(principal: Principal, requested: Optional[int]) -> int:
