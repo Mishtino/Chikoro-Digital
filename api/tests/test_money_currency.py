@@ -3,7 +3,7 @@ from decimal import Decimal
 from app.models.payment import Invoice, Payment, PaymentAllocation
 from app.models.school import School
 from app.models.student import Student
-from app.services.money import allocate_payment, invoice_balance
+from app.services.money import allocate_payment, invoice_balance, student_balance
 
 
 def _records(db_session):
@@ -120,3 +120,57 @@ def test_invoice_balance_ignores_allocations_from_another_school(db_session):
     db_session.commit()
 
     assert invoice_balance(db_session, usd) == Decimal("100.00")
+
+
+def test_invoice_balance_ignores_allocations_from_another_student_in_same_school(db_session):
+    school, student, usd, _ = _records(db_session)
+    other_student = Student(
+        school_id=school.id,
+        student_number="M003",
+        first_name="Other",
+        last_name="Learner",
+        status="active",
+    )
+    db_session.add(other_student)
+    db_session.flush()
+    other_payment = Payment(
+        school_id=school.id,
+        student_id=other_student.id,
+        amount=Decimal("35.00"),
+        currency="USD",
+        method="cash",
+    )
+    db_session.add(other_payment)
+    db_session.flush()
+    db_session.add(PaymentAllocation(
+        school_id=school.id,
+        payment_id=other_payment.id,
+        invoice_id=usd.id,
+        amount=Decimal("35.00"),
+    ))
+    db_session.commit()
+
+    assert invoice_balance(db_session, usd) == Decimal("100.00")
+    assert student_balance(db_session, school.id, student.id, "USD") == Decimal("100.00")
+
+
+def test_student_balance_uses_school_scoped_payment_totals(db_session):
+    school, student, usd, _ = _records(db_session)
+    payment = Payment(
+        school_id=school.id,
+        student_id=student.id,
+        amount=Decimal("30.00"),
+        currency="USD",
+        method="cash",
+    )
+    db_session.add(payment)
+    db_session.flush()
+    db_session.add(PaymentAllocation(
+        school_id=school.id,
+        payment_id=payment.id,
+        invoice_id=usd.id,
+        amount=Decimal("30.00"),
+    ))
+    db_session.commit()
+
+    assert student_balance(db_session, school.id, student.id, "USD") == Decimal("70.00")
