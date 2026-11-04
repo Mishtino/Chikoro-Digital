@@ -70,7 +70,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
 
     portal_email = payload.student_email.strip().lower() if payload.student_email else None
     guardian_email = payload.guardian_email.strip().lower() if payload.guardian_email else None
-    if guardian_email and not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", guardian_email):
+    if guardian_email and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", guardian_email):
         raise HTTPException(status_code=422, detail="Guardian email address is invalid")
     if portal_email:
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", portal_email):
