@@ -35,13 +35,9 @@ def list_notifications(school_id: Optional[int] = Query(None), status_filter: Op
 def process_notifications(principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
     if not principal.is_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
-    queued = db.query(Notification).filter(Notification.status == "queued").all()
-    sent = 0
-    for n in queued:
-        # placeholder: actual delivery by channel would happen here
-        n.status = "sent"
-        n.sent_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(tzinfo=None)
-        n.attempts += 1
-        sent += 1
-    db.commit()
-    return {"processed": sent}
+    # Do not mark messages as sent until a real email/SMS provider is wired in.
+    # The queue remains intact so a future worker can safely deliver it.
+    raise HTTPException(
+        status_code=503,
+        detail="Notification delivery is not configured; queued messages were left unchanged.",
+    )
