@@ -1,16 +1,19 @@
 import secrets
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.student import Student, Contact
 from app.models.school import School
+from app.models.user import User
+from app.services.auth import hash_password
 from app.services.ids import generate_student_number, generate_pin, hash_pin
 from app.services.audit import write_audit
 
@@ -24,6 +27,7 @@ class StudentCreate(BaseModel):
     guardian_name: Optional[str] = None
     guardian_phone: Optional[str] = None
     guardian_email: Optional[str] = None
+    student_email: Optional[str] = None
     school_id: Optional[int] = None
 
 
@@ -44,6 +48,7 @@ class StudentOut(BaseModel):
 class StudentCreateResult(StudentOut):
     pin: str
     guardian_contact_id: Optional[int] = None
+    portal_email: Optional[str] = None
 
 
 def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
@@ -62,10 +67,17 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
     school = db.get(School, sid)
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
-    # sequence
+
+    portal_email = payload.student_email.strip().lower() if payload.student_email else None
+    if portal_email:
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", portal_email):
+            raise HTTPException(status_code=422, detail="Student email address is invalid")
+        if db.query(User).filter(func.lower(User.email) == portal_email).first():
+            raise HTTPException(status_code=409, detail="Student email is already assigned to another account")
+
     count = db.query(Student).filter(Student.school_id == sid).count()
     number = generate_student_number(school.code, count + 1)
-    pin = generate_pin()
+    pin = generate_pin(8)
     student = Student(
         school_id=sid,
         student_number=number,
@@ -76,8 +88,22 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         activation_expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
     )
     db.add(student)
-    db.commit()
-    db.refresh(student)
+    db.flush()
+
+    if portal_email:
+        portal_user = User(
+            email=portal_email,
+            full_name=f"{student.first_name} {student.last_name}",
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+            role="student",
+            school_id=sid,
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(portal_user)
+        db.flush()
+        student.portal_user_id = portal_user.id
+
     guardian_contact_id = None
     if payload.guardian_name or payload.guardian_phone or payload.guardian_email:
         contact = Contact(
@@ -89,11 +115,13 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
             is_primary=True,
         )
         db.add(contact)
-        db.commit()
-        db.refresh(contact)
+        db.flush()
         guardian_contact_id = contact.id
-    write_audit(db, principal, "student.create", "student", student.id, {"number": number}, school_id=sid)
-    result = StudentCreateResult(
+
+    db.commit()
+    db.refresh(student)
+    write_audit(db, principal, "student.create", "student", student.id, {"number": number, "portal_enabled": bool(portal_email)}, school_id=sid)
+    return StudentCreateResult(
         id=student.id,
         school_id=student.school_id,
         student_number=student.student_number,
@@ -104,8 +132,8 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         activated=bool(student.activated_at),
         pin=pin,
         guardian_contact_id=guardian_contact_id,
+        portal_email=portal_email,
     )
-    return result
 
 
 @router.post("/{student_id}/guardians/{contact_id}/activation-pin")
