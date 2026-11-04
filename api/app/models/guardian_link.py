@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, UniqueConstraint, func
 from sqlalchemy.types import Uuid
+from uuid import uuid4
 
 from app.database import Base
 
@@ -9,7 +10,7 @@ class GuardianLink(Base):
 
     __tablename__ = "guardian_links"
 
-    id = Column(Uuid(as_uuid=False), primary_key=True, default=lambda: __import__("uuid").uuid4().hex)
+    id = Column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     profile_id = Column(Uuid(as_uuid=False), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=False, index=True)
