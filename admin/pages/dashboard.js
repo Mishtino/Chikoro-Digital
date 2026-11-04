@@ -13,6 +13,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [schoolForm, setSchoolForm] = useState({ code: '', name: '', province: '' });
   const [creatingSchool, setCreatingSchool] = useState(false);
+  const [editingSchool, setEditingSchool] = useState(null);
+  const [schoolEditForm, setSchoolEditForm] = useState({ name: '', province: '', plan: '' });
+  const [savingSchool, setSavingSchool] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -94,6 +97,34 @@ export default function Dashboard() {
     finally { setCreatingSchool(false); }
   }
 
+
+  function beginSchoolEdit(school) {
+    setEditingSchool(school);
+    setSchoolEditForm({ name: school.name || '', province: school.province || '', plan: school.plan || '' });
+    setError(''); setNotice('');
+  }
+
+  async function saveSchoolProfile(e) {
+    e.preventDefault();
+    if (!editingSchool) return;
+    setSavingSchool(true); setError(''); setNotice('');
+    try {
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const res = await fetch(`${API}/schools/${editingSchool.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify(schoolEditForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'School profile update failed');
+      setNotice(`${data.name} profile updated.`);
+      setEditingSchool(null);
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setSavingSchool(false); }
+  }
+
   const visibleSchools = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return schools;
@@ -167,12 +198,23 @@ export default function Dashboard() {
 
           {can('schools:read') && <section className="dashboard-card school-list-card">
             <div className="school-list-heading"><div><span className="admin-eyebrow">Institution directory</span><h2>Registered schools</h2></div><span className="school-count">{schools.length} total</span></div>
+
+            {editingSchool && can('schools:write') && <form className="school-edit-form" onSubmit={saveSchoolProfile}>
+              <div className="dashboard-card-heading"><div><span className="admin-eyebrow">Edit institution</span><h2>{editingSchool.name}</h2></div></div>
+              <label htmlFor="edit-school-name">School name</label>
+              <input id="edit-school-name" value={schoolEditForm.name} onChange={e => setSchoolEditForm({ ...schoolEditForm, name: e.target.value })} minLength={2} maxLength={200} required />
+              <label htmlFor="edit-school-province">Province</label>
+              <input id="edit-school-province" value={schoolEditForm.province} onChange={e => setSchoolEditForm({ ...schoolEditForm, province: e.target.value })} maxLength={100} />
+              <label htmlFor="edit-school-plan">Plan</label>
+              <input id="edit-school-plan" value={schoolEditForm.plan} onChange={e => setSchoolEditForm({ ...schoolEditForm, plan: e.target.value })} maxLength={50} />
+              <div className="school-actions"><button type="submit" disabled={savingSchool}>{savingSchool ? 'Saving…' : 'Save changes'}</button><button type="button" onClick={() => setEditingSchool(null)} disabled={savingSchool}>Cancel</button></div>
+            </form>}
             <div className="school-search"><input aria-label="Search schools" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, code or province…" /><span>⌕</span></div>
             {loading ? <div className="dashboard-empty">Loading school directory…</div> :
               visibleSchools.length === 0 ? <div className="dashboard-empty">{schools.length ? 'No schools match your search.' : 'No schools have been registered yet. Add your first school to get started.'}</div> :
               <div className="school-table-wrap"><table className="school-table">
-                <thead><tr><th>School</th><th>Province</th><th>Status</th><th>Plan</th>{can('schools:lifecycle') && <th>Actions</th>}</tr></thead>
-                <tbody>{visibleSchools.map(school => <tr key={school.id}><td><strong>{school.name}</strong><small>{school.code}</small></td><td>{school.province || '—'}</td><td><span className={`school-status status-${school.status}`}>{school.status}</span></td><td>{school.plan || '—'}</td>{can('schools:lifecycle') && <td className="school-actions">{school.status === 'suspended' ? <button type="button" onClick={() => updateSchoolStatus(school, 'onboarding')}>Reinstate</button> : <><button type="button" onClick={() => updateSchoolStatus(school, 'live')} disabled={school.status === 'live'}>Set live</button><button type="button" onClick={() => updateSchoolStatus(school, 'suspended')}>Suspend</button></>}</td>}</tr>)}</tbody>
+                <thead><tr><th>School</th><th>Province</th><th>Status</th><th>Plan</th>{(can('schools:lifecycle') || can('schools:write')) && <th>Actions</th>}</tr></thead>
+                <tbody>{visibleSchools.map(school => <tr key={school.id}><td><strong>{school.name}</strong><small>{school.code}</small></td><td>{school.province || '—'}</td><td><span className={`school-status status-${school.status}`}>{school.status}</span></td><td>{school.plan || '—'}</td>{(can('schools:lifecycle') || can('schools:write')) && <td className="school-actions">{can('schools:write') && <button type="button" onClick={() => beginSchoolEdit(school)}>Edit</button>}{can('schools:lifecycle') && (school.status === 'suspended' ? <button type="button" onClick={() => updateSchoolStatus(school, 'onboarding')}>Reinstate</button> : <><button type="button" onClick={() => updateSchoolStatus(school, 'live')} disabled={school.status === 'live'}>Set live</button><button type="button" onClick={() => updateSchoolStatus(school, 'suspended')}>Suspend</button></>)}</td>}</tr>)}</tbody>
               </table></div>
             }
             <button className="dashboard-refresh" type="button" onClick={load} disabled={loading}>↻ Refresh directory</button>
