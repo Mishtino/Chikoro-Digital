@@ -12,6 +12,7 @@ from app.config import settings
 from sqlalchemy import text, func
 from fastapi.security import HTTPAuthorizationCredentials
 from app.models.user import User
+from app.models.student import Student
 from app.services.auth import hash_password
 from app.services.ids import verify_pin
 from app.services.supabase_auth import verify_supabase_access_token
