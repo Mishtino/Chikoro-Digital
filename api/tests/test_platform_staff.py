@@ -49,6 +49,7 @@ def test_owner_can_invite_support_staff_and_link_both_identity_records(
     _install_sqlite_profiles(db_session, monkeypatch)
     monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
     import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     auth_id = str(uuid4())
     invited = []
     monkeypatch.setattr(staff_router, "invite_auth_user", lambda email, name: invited.append((email, name)) or auth_id)
@@ -144,6 +145,7 @@ def test_failed_profile_link_triggers_auth_user_compensation(
 ):
     monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
     import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: True)
     auth_id = str(uuid4())
     deleted = []
     monkeypatch.setattr(staff_router, "invite_auth_user", lambda email, name: auth_id)
@@ -158,3 +160,19 @@ def test_failed_profile_link_triggers_auth_user_compensation(
     assert response.status_code == 503
     assert deleted == [auth_id]
     assert db_session.query(User).filter_by(email="rollback@example.com").first() is None
+
+
+def test_invitation_is_blocked_until_staff_role_migration_is_applied(client, seed_two_schools, monkeypatch):
+    monkeypatch.setattr(settings, "supabase_secret_key", "server-only-test-secret")
+    import app.routers.platform_staff as staff_router
+    monkeypatch.setattr(staff_router, "_staff_roles_schema_ready", lambda db: False)
+    monkeypatch.setattr(staff_router, "invite_auth_user", lambda email, name: pytest.fail("must not call Supabase before migration"))
+    owner = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
+
+    response = client.post("/platform/staff/invitations", json={
+        "email": "migration@example.com", "full_name": "Migration Test", "role": "vortex_support"
+    })
+
+    assert response.status_code == 503
+    assert "migration" in response.json()["detail"].lower()
