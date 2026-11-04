@@ -84,6 +84,7 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     row = db.execute(
         text("""
             SELECT p.id, p.local_user_id, p.role, p.school_id, p.is_active,
+                   u.role AS local_user_role, u.school_id AS local_school_id,
                    u.is_admin, u.is_active AS local_user_is_active
             FROM public.profiles AS p
             LEFT JOIN public.users AS u ON u.id = p.local_user_id
@@ -95,4 +96,15 @@ def resolve_profile(db: Session, claims: dict) -> dict:
     if (not row or not row["is_active"] or row["local_user_id"] is None
             or not row["local_user_is_active"]):
         raise HTTPException(status_code=403, detail="Account is not activated for Chikoro Digital")
+
+    # The bridge must not become a way to elevate a local account or move it
+    # into another school's tenant. Vortex administrators are the sole
+    # intentional role exception and must be marked admin in public.users.
+    role_matches = row["role"] == row["local_user_role"] or (
+        bool(row["is_admin"]) and row["role"] in {"admin", "vortex_admin"}
+    )
+    school_matches = row["school_id"] == row["local_school_id"]
+    if not role_matches or not school_matches:
+        raise HTTPException(status_code=403, detail="Account identity does not match its school record")
+
     return dict(row)
