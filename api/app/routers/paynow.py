@@ -49,8 +49,10 @@ def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
         return False
     try:
         from decimal import Decimal, InvalidOperation
-        received = Decimal(str(provider_amount)).quantize(Decimal("0.01"))
-        expected = Decimal(str(attempt.amount)).quantize(Decimal("0.01"))
+        received = Decimal(str(provider_amount))
+        expected = Decimal(str(attempt.amount))
+        if not received.is_finite() or not expected.is_finite():
+            return False
     except (InvalidOperation, ValueError, TypeError):
         return False
     return received == expected
