@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./chikoro.db"
     secret_key: str = "change-me-in-production-please"
     supabase_url: str = ""
+    supabase_secret_key: str = ""
     admin_bootstrap_token: str = ""
     platform_owner_email: str = ""
     access_token_expire_minutes: int = 60 * 8
