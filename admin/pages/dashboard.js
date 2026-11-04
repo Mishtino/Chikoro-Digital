@@ -37,15 +37,17 @@ export default function Dashboard() {
       throw new Error('This account is not authorised for the Vortex Developer Portal.');
     }
     setPlatformAccess({ role: profile.role || '', permissions: profile.permissions || [] });
-    return token;
+    return { token, profile };
   }
 
   async function load() {
     setLoading(true);
     try {
-      const token = await getAdminToken();
-      if (!token) return;
-      if (can('schools:read')) {
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const { token, profile } = auth;
+      const permissions = profile.permissions || [];
+      if (permissions.includes('schools:read')) {
         const res = await fetch(`${API}/schools`, { headers: { Authorization: `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load schools');
@@ -53,7 +55,7 @@ export default function Dashboard() {
       } else {
         setSchools([]);
       }
-      if (can('audit:read')) {
+      if (permissions.includes('audit:read')) {
         const auditRes = await fetch(`${API}/platform/audit-logs?limit=8&offset=0`, { headers: { Authorization: `Bearer ${token}` } });
         if (auditRes.ok) {
           const auditData = await auditRes.json();
@@ -75,8 +77,9 @@ export default function Dashboard() {
     e.preventDefault();
     setCreatingSchool(true); setError(''); setNotice('');
     try {
-      const token = await getAdminToken();
-      if (!token) return;
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const token = auth.token;
       const res = await fetch(`${API}/schools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -105,8 +108,9 @@ export default function Dashboard() {
     if (!window.confirm(`Are you sure you want to ${action} ${school.name}?`)) return;
     setError(''); setNotice('');
     try {
-      const token = await getAdminToken();
-      if (!token) return;
+      const auth = await getAdminToken();
+      if (!auth) return;
+      const token = auth.token;
       const res = await fetch(`${API}/schools/${school.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
