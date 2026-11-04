@@ -79,6 +79,25 @@ export default function Dashboard() {
     );
   }, [schools, query]);
 
+  async function updateSchoolStatus(school, nextStatus) {
+    const action = nextStatus === 'suspended' ? 'suspend' : nextStatus === 'live' ? 'activate' : 'return to onboarding';
+    if (!window.confirm(`Are you sure you want to ${action} ${school.name}?`)) return;
+    setError(''); setNotice('');
+    try {
+      const token = await getAdminToken();
+      if (!token) return;
+      const res = await fetch(`${API}/schools/${school.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: nextStatus, reason: 'Changed from Vortex Developer Portal' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'School status update failed');
+      setNotice(`${school.name} status changed to ${data.status}.`);
+      await load();
+    } catch (e) { setError(e.message); }
+  }
+
   async function logout() {
     await getSupabaseBrowserClient().auth.signOut();
     router.replace('/');
@@ -127,8 +146,8 @@ export default function Dashboard() {
             {loading ? <div className="dashboard-empty">Loading school directory…</div> :
               visibleSchools.length === 0 ? <div className="dashboard-empty">{schools.length ? 'No schools match your search.' : 'No schools have been registered yet. Add your first school to get started.'}</div> :
               <div className="school-table-wrap"><table className="school-table">
-                <thead><tr><th>School</th><th>Province</th><th>Status</th><th>Plan</th></tr></thead>
-                <tbody>{visibleSchools.map(school => <tr key={school.id}><td><strong>{school.name}</strong><small>{school.code}</small></td><td>{school.province || '—'}</td><td><span className={`school-status status-${school.status}`}>{school.status}</span></td><td>{school.plan || '—'}</td></tr>)}</tbody>
+                <thead><tr><th>School</th><th>Province</th><th>Status</th><th>Plan</th><th>Actions</th></tr></thead>
+                <tbody>{visibleSchools.map(school => <tr key={school.id}><td><strong>{school.name}</strong><small>{school.code}</small></td><td>{school.province || '—'}</td><td><span className={`school-status status-${school.status}`}>{school.status}</span></td><td>{school.plan || '—'}</td><td className="school-actions">{school.status === 'suspended' ? <button type="button" onClick={() => updateSchoolStatus(school, 'onboarding')}>Reinstate</button> : <><button type="button" onClick={() => updateSchoolStatus(school, 'live')} disabled={school.status === 'live'}>Set live</button><button type="button" onClick={() => updateSchoolStatus(school, 'suspended')}>Suspend</button></>}</td></tr>)}</tbody>
               </table></div>
             }
             <button className="dashboard-refresh" type="button" onClick={load} disabled={loading}>↻ Refresh directory</button>
