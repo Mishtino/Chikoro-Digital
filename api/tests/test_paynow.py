@@ -456,3 +456,35 @@ def test_parent_cannot_pay_another_learners_invoice_within_same_school(
     assert response.status_code == 422
     assert response.json()["detail"] == "Invoice does not belong to the selected student"
     assert db_session.query(PaynowAttempt).count() == 0
+
+
+def test_student_paynow_rejects_ambiguous_active_learner_mapping(client, db_session):
+    school = School(code="PN009", name="Ambiguous Paynow Mapping School")
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="ambiguous-paynow@example.test", full_name="Ambiguous Student",
+        password_hash="unused", role="student", school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.add_all([
+        Student(
+            school_id=school.id, student_number="PN-A1", first_name="First",
+            last_name="Learner", status="active", portal_user_id=user.id,
+        ),
+        Student(
+            school_id=school.id, student_number="PN-A2", first_name="Second",
+            last_name="Learner", status="active", portal_user_id=user.id,
+        ),
+    ])
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _student_principal(
+        user.id, school.id
+    )
+    response = client.post("/paynow/initiate", json={"amount": 1})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Student account is not uniquely linked"
+    assert db_session.query(PaynowAttempt).count() == 0
