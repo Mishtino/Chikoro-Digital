@@ -71,6 +71,13 @@ def list_subjects(school_id: Optional[int] = Query(None), principal: SupabasePri
 @router.post("/assessments", status_code=status.HTTP_201_CREATED)
 def create_assessment(payload: AssessmentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    subject = db.query(Subject).filter(Subject.id == payload.subject_id, Subject.school_id == sid).first()
+    if subject is None:
+        raise HTTPException(status_code=404, detail="Subject not found in this school")
+    if payload.term_id is not None and db.query(Term).filter(Term.id == payload.term_id, Term.school_id == sid).first() is None:
+        raise HTTPException(status_code=404, detail="Term not found in this school")
+    if payload.max_score <= 0 or payload.weight <= 0:
+        raise HTTPException(status_code=422, detail="Assessment weight and maximum score must be positive")
     a = Assessment(school_id=sid, subject_id=payload.subject_id, term_id=payload.term_id, name=payload.name, weight=payload.weight, max_score=payload.max_score)
     db.add(a)
     db.commit()
@@ -96,6 +103,12 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
     sid = _sid(principal, payload.school_id)
     created = 0
     for e in payload.entries:
+        student = db.query(Student).filter(Student.id == e.student_id, Student.school_id == sid).first()
+        assessment = db.query(Assessment).filter(Assessment.id == e.assessment_id, Assessment.school_id == sid).first()
+        if student is None or assessment is None:
+            raise HTTPException(status_code=404, detail="Student or assessment not found in this school")
+        if e.score < 0 or e.score > assessment.max_score:
+            raise HTTPException(status_code=422, detail="Mark score is outside the assessment range")
         existing = db.query(Mark).filter(Mark.school_id == sid, Mark.student_id == e.student_id, Mark.assessment_id == e.assessment_id).first()
         if existing:
             existing.score = e.score
@@ -109,14 +122,19 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
 
 
 @router.post("/marks/approve")
-def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
+def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
+    if db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first() is None:
+        raise HTTPException(status_code=404, detail="Assessment not found in this school")
     updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).update({"status": "approved"})
     db.commit()
     return {"approved": updated}
 @router.post("/marks/publish")
-def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
+def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
+    assessment = db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first()
+    if assessment is None:
+        raise HTTPException(status_code=404, detail="Assessment not found in this school")
     marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id).all()
     from datetime import datetime, timezone
     for m in marks:
