@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import urllib.parse
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -60,8 +61,30 @@ def initiate_transaction(
     return resp
 
 
+def _validate_poll_url(poll_url: str) -> str:
+    """Only contact Paynow's HTTPS endpoints; never follow arbitrary stored URLs."""
+    try:
+        parsed = urlsplit(poll_url)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        valid_host = hostname == "paynow.co.zw" or hostname.endswith(".paynow.co.zw")
+        valid_port = parsed.port in (None, 443)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid Paynow poll URL")
+
+    if (
+        parsed.scheme != "https"
+        or not valid_host
+        or not valid_port
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("Paynow poll URL must use an approved HTTPS Paynow host")
+    return poll_url
+
+
 def poll_transaction(poll_url: str, integration_key: str) -> dict:
-    with httpx.Client(timeout=30.0) as client:
+    poll_url = _validate_poll_url(poll_url)
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
         r = client.get(poll_url)
         r.raise_for_status()
     resp = _parse_response(r.text)
