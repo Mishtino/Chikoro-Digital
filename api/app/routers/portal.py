@@ -43,11 +43,17 @@ def portal_register():
 def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     if principal.role != "student":
         raise HTTPException(status_code=403, detail="Portal users only")
-    from app.models.user import User
-    # find student linked to this user
-    student = db.query(Student).filter(Student.portal_user_id == principal.user_id).first()
-    if student is None:
-        raise HTTPException(status_code=404, detail="No student linked to this account")
+    # Require one unambiguous, active learner mapping in the same school
+    # tenant as the trusted Supabase profile.
+    linked_students = db.query(Student).filter(
+        Student.portal_user_id == principal.user_id,
+        Student.school_id == principal.school_id,
+    ).all()
+    if len(linked_students) != 1:
+        raise HTTPException(status_code=403, detail="Student account is not uniquely linked")
+    student = linked_students[0]
+    if student.status != "active":
+        raise HTTPException(status_code=403, detail="Student account is inactive")
     invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id).order_by(Invoice.id).all()
     items = []
     for inv in invoices:
@@ -70,6 +76,8 @@ def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_princi
 
 @router.get("/me")
 def portal_me(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student portal only")
     from app.models.user import User
     user = db.get(User, principal.user_id)
     if user is None or not user.is_active:
