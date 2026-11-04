@@ -48,6 +48,25 @@ class StaffInviteRequest(BaseModel):
         return value
 
 
+
+def _staff_roles_schema_ready(db: Session) -> bool:
+    """Fail closed until the trusted profiles role constraint accepts staff roles."""
+    try:
+        definition = db.execute(text("""
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid = 'public.profiles'::regclass
+              AND conname = 'profiles_role_check'
+        """)).scalar()
+    except Exception:
+        return False
+    return bool(
+        definition
+        and "vortex_support" in definition
+        and "vortex_auditor" in definition
+    )
+
+
 @router.get("")
 def list_platform_staff(
     principal: SupabasePrincipal = Depends(get_supabase_principal),
@@ -74,6 +93,8 @@ def invite_platform_staff(
 ):
     if not principal.is_platform_admin:
         raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
+    if not _staff_roles_schema_ready(db):
+        raise HTTPException(status_code=503, detail="Platform staff role migration must be applied before invitations are enabled")
     if not (settings.supabase_secret_key or "").strip():
         raise HTTPException(status_code=503, detail="Platform staff invitations are not configured")
     if db.query(User).filter(func.lower(User.email) == payload.email).first():
