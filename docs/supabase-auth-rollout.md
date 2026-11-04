@@ -67,9 +67,11 @@ Do not run the sample with placeholders unchanged. If the result is not exactly 
 ## Current limitations and rollout gates
 
 - The live project currently has one local user and zero Supabase Auth users. No existing account has yet been linked.
-- The student/parent portal activation path is implemented for student PINs. Parent/guardian linking needs a separate verified-contact workflow; do not grant parent access based only on knowing a student number.
-- Staff account invitations still require a controlled provisioning workflow.
-- Production FastAPI protected routes require `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` to be set on Render.
-- Do not deploy the API until those variables are configured and the existing administrator is linked.
-- Do not enable blanket table access or revoke backend database privileges until the Render database connection role has been verified.
-- Direct client access to academic and financial tables must remain blocked until table-specific RLS policies and cross-school tests are approved.
+- The student activation path uses a verified Supabase Auth identity plus a school-issued one-time PIN. Parent activation is not yet exposed in the portal.
+- A `public.guardian_links` foundation now maps a verified Auth profile to a school contact record. Trusted backend provisioning must create and activate these rows only after the school independently verifies the guardian. Never link by email, student number, or browser-supplied relationship alone.
+- Staff and Vortex administrator invitations still require a controlled provisioning workflow. Do not enable public signup as a route to privileged roles.
+- The live Render service now has `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` configured. The latest configuration-triggered deployment was reported live; this does not mean any Auth account has been provisioned.
+- A production Data API lockdown migration has been applied: RLS is enabled on every public table; `anon` has no table/sequence privileges; `authenticated` has only SELECT on `profiles`, governed by the own-profile policy. Direct client queries and realtime subscriptions to other public tables will remain unavailable until explicit policies and grants are added.
+- Backend API access is intended to continue through the trusted Render database connection. Before further table-policy rollout, verify that this connection uses a trusted owner/BYPASSRLS-capable role; never expose that credential to a browser.
+- Financial tables, Paynow credentials, audit logs, notification queues and student records must stay backend-only until narrowly scoped policies are implemented and tested.
+- The existing administrator is still not linked: the production database audit found one local user and zero Supabase Auth users. Do not cut over administrator login until the real owner has created/confirmed their Auth identity and the exact UUID has been linked by an authorized operator.
