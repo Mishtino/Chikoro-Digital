@@ -32,7 +32,8 @@ export default function PortalFees() {
       <div className="card">
         <h1>Fee status</h1>
         <p>{data.name} ({data.student_number})</p>
-        <p><strong>Total balance: {data.total_balance.toFixed(2)} USD</strong></p>
+        <p><strong>Outstanding USD balance: {data.total_balance.toFixed(2)} USD</strong></p>
+        {Object.entries(data.balances_by_currency || {}).filter(([currency]) => currency !== 'USD').map(([currency, balance]) => <p key={currency}>Outstanding {currency} balance: {Number(balance).toFixed(2)}</p>)}
         <button onClick={pay} disabled={data.total_balance <= 0} style={{ marginBottom: '1rem' }}>Pay now</button>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr><th align="left">Invoice</th><th align="right">Total</th><th align="right">Balance</th><th align="right">Currency</th></tr></thead>
