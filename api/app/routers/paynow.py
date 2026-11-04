@@ -106,9 +106,14 @@ def get_settings(school_id: Optional[int] = None, principal: SupabasePrincipal =
 def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'student', 'parent')), db: Session = Depends(get_db)):
     # determine school
     if principal.role == 'student':
-        linked = db.query(Student).filter(Student.portal_user_id == principal.user_id, Student.school_id == principal.school_id, Student.status == 'active').all()
+        linked = db.query(Student).filter(
+            Student.portal_user_id == principal.user_id,
+            Student.school_id == principal.school_id,
+        ).all()
         if len(linked) != 1:
             raise HTTPException(status_code=403, detail='Student account is not uniquely linked')
+        if linked[0].status != 'active':
+            raise HTTPException(status_code=403, detail='Student account is inactive')
         if payload.student_id is not None and payload.student_id != linked[0].id:
             raise HTTPException(status_code=403, detail='Access denied')
         payload.student_id = linked[0].id
