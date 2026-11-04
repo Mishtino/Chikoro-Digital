@@ -24,7 +24,11 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
       - key: CORS_ORIGINS
-        value: https://chikoro-web.onrender.com,https://chikoro-admin.onrender.com
+        value: https://chikoro-digital-d9ge.vercel.app,https://chikoro-digital-d9ge-vortex-technologies.vercel.app,https://chikoro-digital.vercel.app,https://chikoro-digital-vortex-technologies.vercel.app
+      - key: PAYNOW_RETURN_URL
+        value: https://chikoro-digital-d9ge.vercel.app/paynow/return
+      - key: PAYNOW_RESULT_URL
+        value: https://chikoro-digital.onrender.com/paynow/webhook
 
   - type: web
     name: chikoro-web
