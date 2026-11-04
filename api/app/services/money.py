@@ -24,10 +24,13 @@ def invoice_balance(db: Session, invoice: Invoice) -> Decimal:
     return to_decimal(invoice.total) - invoice_paid_amount(db, invoice.id)
 
 
-def student_balance(db: Session, school_id: int, student_id: int) -> Decimal:
-    invoices = db.query(Invoice).filter(
+def student_balance(db: Session, school_id: int, student_id: int, currency: str | None = None) -> Decimal:
+    query = db.query(Invoice).filter(
         Invoice.school_id == school_id, Invoice.student_id == student_id, Invoice.status != "void"
-    ).all()
+    )
+    if currency is not None:
+        query = query.filter(Invoice.currency == currency)
+    invoices = query.all()
     total_invoiced = sum((to_decimal(i.total) for i in invoices), Decimal("0"))
     paid = Decimal("0")
     for inv in invoices:
