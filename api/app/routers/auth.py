@@ -125,6 +125,7 @@ def activate_parent_account(
           AND c.guardian_activation_expires_at > now()
           AND c.guardian_activated_at IS NULL
           AND s.status = 'active'
+        FOR UPDATE OF c
     """), {"email": auth_user["email"]}).mappings().all()
     matches = [row for row in contacts if verify_pin(payload.pin, row["guardian_activation_pin_hash"])]
     if len(matches) != 1:
@@ -242,7 +243,7 @@ def activate_student_account(
             Student.activated_at.is_(None),
             Student.activation_pin_hash.isnot(None),
             Student.activation_expires_at > func.now(),
-        ).all()
+        ).with_for_update().all()
         matches = [item for item in candidates if verify_pin(payload.pin, item.activation_pin_hash)]
         if len(matches) == 1:
             student = matches[0]
