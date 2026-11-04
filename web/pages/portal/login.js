@@ -21,7 +21,8 @@ export default function PortalLogin() {
       });
       const profile = await response.json();
       if (!response.ok) { await supabase.auth.signOut(); throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.'); }
-      if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error(profile.role === 'parent' ? 'Parent dashboard activation is not yet available. Please contact your school office.' : 'This account does not have student portal access.'); }
+      if (profile.role === 'parent') { router.push('/portal/parent'); return; }
+      if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have student portal access.'); }
       router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }
