@@ -17,14 +17,17 @@ services:
         value: production
       - key: DEBUG
         value: "false"
-      # Set this in Render to the Supabase PostgreSQL connection string.
-      # Keep the value secret; do not commit it to this file.
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
+      - key: SUPABASE_URL
+        value: https://xivzduvqpuqbecskxaoj.supabase.co
+      # Publishable key is safe for the Auth /user verification endpoint.
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_SMBhjX7arcnOBKSaejitYA_NgXb2t74
       - key: CORS_ORIGINS
         value: https://chikoro-digital-d9ge.vercel.app,https://chikoro-digital-d9ge-vortex-technologies.vercel.app,https://chikoro-digital.vercel.app,https://chikoro-digital-vortex-technologies.vercel.app
       - key: PAYNOW_RETURN_URL
