@@ -1,5 +1,3 @@
-from copy import deepcopy
-from types import SimpleNamespace
 
 import pytest
 
