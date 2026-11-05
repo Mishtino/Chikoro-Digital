@@ -12,7 +12,7 @@ from app.models.student import Student
 from app.models.user import User
 from app.services.audit import write_audit
 from app.services.class_access import require_teacher_class
-from app.routers.portal import _parent_student
+from app.routers.portal import _parent_student, _parent_student_ids
 
 router = APIRouter(prefix="/communications", tags=["parent-teacher-communications"])
 
@@ -208,16 +208,9 @@ def list_conversations(
         ParentTeacherConversation.school_id == school_id,
     )
     if principal.role == "parent":
-        # Re-resolve verified links on every request; stale links do not retain access.
-        from sqlalchemy import text
-        linked_ids = [row[0] for row in db.execute(text("""
-            SELECT DISTINCT c.student_id
-            FROM public.guardian_links gl
-            JOIN public.contacts c ON c.id = gl.contact_id AND c.school_id = gl.school_id
-            JOIN public.students s ON s.id = c.student_id AND s.school_id = c.school_id
-            WHERE gl.profile_id = :profile_id AND gl.school_id = :school_id
-              AND gl.is_active = true AND gl.verified_at IS NOT NULL AND s.status = 'active'
-        """), {"profile_id": str(principal.auth_user_id), "school_id": school_id}).all()]
+        # Re-resolve verified links on every request; use the same
+        # school/status/verification checks as the rest of the parent portal.
+        linked_ids = _parent_student_ids(principal, db)
         query = query.filter(
             ParentTeacherConversation.parent_user_id == principal.user_id,
             ParentTeacherConversation.student_id.in_(linked_ids) if linked_ids else ParentTeacherConversation.id == -1,
