@@ -1,5 +1,8 @@
 -- Proposed only: apply to a staging database after review. Not applied to production.
 -- Private parent/teacher threads; browser roles receive no direct table grants.
+
+BEGIN;
+
 DO $messaging$
 BEGIN
   IF NOT EXISTS (
@@ -78,3 +81,5 @@ ALTER TABLE public.parent_teacher_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.parent_teacher_messages ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.parent_teacher_conversations FROM anon, authenticated;
 REVOKE ALL PRIVILEGES ON TABLE public.parent_teacher_messages FROM anon, authenticated;
+
+COMMIT;
