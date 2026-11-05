@@ -400,6 +400,78 @@ def parent_child_term_comparison(
     return _term_comparison_payload(student, term_id, db)
 
 
+
+
+def _portal_report_card_pdf(data: dict, term_id: Optional[int] = None):
+    from html import escape
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    import re
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm,
+                            topMargin=16*mm, bottomMargin=16*mm,
+                            title=f"Report card - {data['student_number']}", author="Chikoro Digital")
+    styles = getSampleStyleSheet()
+    story = [Paragraph("CHIKORO DIGITAL", styles["Title"]),
+             Paragraph("STUDENT REPORT CARD", styles["Heading2"]), Spacer(1, 5*mm),
+             Paragraph(f"<b>Learner:</b> {escape(str(data['name']))}", styles["BodyText"]),
+             Paragraph(f"<b>Student number:</b> {escape(str(data['student_number']))}", styles["BodyText"])]
+    if term_id is not None:
+        story.append(Paragraph(f"<b>Term ID:</b> {term_id}", styles["BodyText"]))
+    story.append(Spacer(1, 7*mm))
+    rows = [["Subject", "Average (%)", "Assessment", "Score"]]
+    for subject in data["subjects"]:
+        entries = subject.get("assessments", [])
+        if not entries:
+            rows.append([escape(str(subject["subject"])), f"{float(subject['average']):.2f}", "—", "—"])
+        for i, entry in enumerate(entries):
+            rows.append([escape(str(subject["subject"])) if i == 0 else "",
+                         f"{float(subject['average']):.2f}" if i == 0 else "",
+                         escape(str(entry["name"])),
+                         f"{float(entry['score']):g} / {float(entry['max']):g}"])
+    if len(rows) == 1:
+        rows.append(["No published results", "", "", ""])
+    table = Table(rows, colWidths=[42*mm, 28*mm, 70*mm, 30*mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#17365D")),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("GRID",(0,0),(-1,-1),0.35,colors.HexColor("#B7C3D0")),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#F3F6FA")]),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story.extend([table, Spacer(1, 8*mm),
+                  Paragraph("This report contains published assessment results only.", styles["Italic"])])
+    doc.build(story)
+    buffer.seek(0)
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", str(data["student_number"]))[:64]
+    filename = f"report-card-{safe}" + (f"-term-{term_id}" if term_id else "") + ".pdf"
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/results/pdf")
+def student_report_card_pdf(term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    student = _student_portal_student(principal, db)
+    data = portal_results(term_id, principal, db)
+    return _portal_report_card_pdf(data, term_id)
+
+
+@router.get("/parent/children/{student_id}/report-card.pdf")
+def parent_child_report_card_pdf(student_id: int, term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    _parent_student(principal, student_id, db)
+    data = parent_child_report_card(student_id, term_id, principal, db)
+    return _portal_report_card_pdf(data, term_id)
+
+
 @router.post("/register", status_code=status.HTTP_410_GONE)
 def portal_register():
     """Legacy local-password registration is disabled during Supabase migration."""
