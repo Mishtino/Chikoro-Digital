@@ -74,6 +74,7 @@ class StudentOut(BaseModel):
     form: Optional[str] = None
     status: str
     activated: bool
+    portal_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -175,6 +176,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         form=student.form,
         status=student.status,
         activated=bool(student.activated_at),
+        portal_enabled=bool(student.portal_user_id),
         pin=pin,
         guardian_contact_id=guardian_contact_id,
         portal_email=portal_email,
