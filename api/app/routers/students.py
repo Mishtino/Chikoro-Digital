@@ -315,7 +315,8 @@ def update_student_profile(
 
     if changes:
         db.flush()
-        db.refresh(student)$3(
+        db.refresh(student)
+    write_audit(
             db,
             principal,
             "student.profile_update",
