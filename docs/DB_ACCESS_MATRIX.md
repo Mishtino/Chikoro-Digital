@@ -10,7 +10,7 @@ Source reviewed on branch `work/migration-and-financial-hardening-20261105`: all
 |---|---|---|
 | `auth.py` | `users`, `students`, `contacts`, `profiles`, `guardian_links`, `audit_logs`, `auth.users` | Reads identity and activation state; creates/updates local users, profiles, guardian links, activation records and audit events. `auth.users` is read-only from the API. |
 | `fees.py` | `terms`, `fee_items`, `fee_structures`, `fee_structure_items`, `invoices`, `invoice_lines`, `students`, `schools` | Reads and creates fee configuration and invoices; updates current-term flags. |
-| `notifications.py` | `notifications` | Reads notification records. |
+| `notifications.py` | `notifications` | Reads notification records; the process endpoint currently fails closed with HTTP 501 and does not mark messages as delivered because no provider is configured. |
 | `payments.py` | `invoices`, `invoice_lines`, `payments`, `payment_allocations`, `receipts`, `students`, `schools` | Reads balances and creates payment, allocation and receipt records. |
 | `paynow.py` | `schools`, `students`, `invoices`, `payments`, `payment_allocations`, `receipts`, `paynow_attempts`, `guardian_links`, `contacts` | Reads configuration, learner/guardian links and balances; creates and updates Paynow attempts; verified settlement creates payments, allocations and receipts. |
 | `platform_access.py` | No direct table access | Uses the resolved principal and permission map. |
