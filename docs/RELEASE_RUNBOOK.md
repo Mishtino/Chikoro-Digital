@@ -14,7 +14,7 @@
 | Background worker | `worker/worker.py` is currently a placeholder; no production job-processing implementation has been verified | Do not deploy or grant database access to a worker until actual jobs, service configuration and permissions are ready. |
 | Mobile apps | Current repository inventory reviewed here identifies the web portals; native iOS/Android release artifacts have not been verified | Treat App Store / Google Play publishing as a separate release stream once native or approved installable app packages exist. |
 
-## Vercel project inventory (read-only, 5 November 2026)
+## Vercel project inventory and preview controls (5 November 2026)
 
 The Vercel Git integration metadata and project records identify these four projects as linked to `Mishtino/Chikoro-Digital`:
 
@@ -22,14 +22,14 @@ The Vercel Git integration metadata and project records identify these four proj
 |---|---|---|---|---|
 | `chikoro-digital` | `prj_vwMXe7bbljJ7Cf2cVafchFxDwUez` | `admin` | `chikoro-digital.vercel.app`, `chikoro-digital-vortex-technologies.vercel.app` | Canonical admin-root candidate; domain aliases exist, but the inspected project record reports `live: false`. |
 | `chikoro-digital-d9ge` | `prj_LECT319368Ee53Jg7flvGAQWnTB5` | `web` | `chikoro-digital-d9ge.vercel.app`, `chikoro-digital-d9ge-vortex-technologies.vercel.app`, `chikoro-digital-d9ge-git-main-vortex-technologies.vercel.app` | The only currently identified `web`-root project; candidate for the school/student/parent web portal. |
-| `chikoro-digital-oydi` | `prj_CNLlvxGUYa0KlOOjSwWap6AFhCRd` | `admin` | `chikoro-digital-oydi-gray.vercel.app` | Duplicate `admin` root; purpose/domain ownership needs operator confirmation before disabling or deleting. |
-| `chikoro-digital-uyds` | `prj_1mpTUujm1soFGkJhTUXDgWVv4whX` | `admin` | `chikoro-digital-uyds.vercel.app`, `chikoro-digital-uyds-vortex-technologies.vercel.app`, `chikoro-digital-uyds-git-main-vortex-technologies.vercel.app` | Duplicate `admin` root; purpose/domain ownership needs operator confirmation before disabling or deleting. |
+| `chikoro-digital-oydi` | `prj_CNLlvxGUYa0KlOOjSwWap6AFhCRd` | `admin` | `chikoro-digital-oydi-gray.vercel.app` | Duplicate `admin` root; preview deployment disable was requested and accepted by Vercel API; verify the setting in project settings before relying on it. |
+| `chikoro-digital-uyds` | `prj_1mpTUujm1soFGkJhTUXDgWVv4whX` | `admin` | `chikoro-digital-uyds.vercel.app`, `chikoro-digital-uyds-vortex-technologies.vercel.app`, `chikoro-digital-uyds-git-main-vortex-technologies.vercel.app` | Duplicate `admin` root; preview deployment disable was requested and accepted by Vercel API; verify the setting in project settings before relying on it. |
 
 All four project records reported `live: false` and their latest deployment state as `READY` with no production target. A READY preview is not proof of a production deployment. The team is on the Hobby plan. GitHub integration comments on this branch recorded both the daily deployment quota limit (`api-deployments-free-per-day`) and deployment flood limit (`api-deployments-flood`).
 
-**Safe consolidation proposal (not yet applied):** retain `chikoro-digital` for the `admin` root and `chikoro-digital-d9ge` for the `web` root; first verify aliases, environment variables, protection settings, and any external consumers of `oydi` and `uyds`. Only after that inventory should duplicate preview builds be disabled or projects be disconnected/deleted. No Vercel project settings, domains, integrations, or deployments were changed during this inventory.
+**Safe consolidation direction:** retain `chikoro-digital` for the `admin` root and `chikoro-digital-d9ge` for the `web` root. Before changing aliases, disconnecting integrations or deleting duplicates, verify external consumers and production dependencies. The operator approved disabling preview deployments on `oydi` and `uyds`; Vercel accepted both project-update requests. The project-detail readback does not expose the `previewDeploymentsDisabled` field, so verify that toggle directly in Vercel project settings before treating the restriction as confirmed. No domains, environment variables, integrations, production deployments or project deletions were changed.
 
-## Required release sequence
+## Latest branch validation (5 November 2026)\n\nCommit `87bb29288437e626875df1937d51c74703846847` has a completed GitHub Actions run (`42046022286`): `pytest`, `web-build` and `admin-build` all succeeded. The four Vercel project status contexts still report build-rate-limit failures. The PR remains open and draft; no reviews or review threads are recorded. This CI result validates the tested commit, but does not clear Vercel deployment or Supabase staging gates.\n\n## Required release sequence
 
 1. **Freeze and identify the release**
    - Confirm the target commit and compare it with production `main`.
@@ -66,7 +66,7 @@ All four project records reported `live: false` and their latest deployment stat
 
 Render auto-deploys from `main`. Do not push incomplete changes to `main`. Prepare and validate work on a feature branch, then coordinate the merge/release window so the database and API changes remain compatible. Render's preview services are currently disabled, so a feature branch does not create a Render preview deployment.
 
-Vercel may create preview deployments for pull requests/branches. On 5 November 2026, the Vercel integration returned `Deployment rate limited — retry in 24 hours` for the four linked projects on this review branch. These were preview/status checks, not production releases. Recheck quota before the next preview or production release; do not repeatedly retry while rate-limited.
+Vercel may create preview deployments for pull requests/branches. On 5 November 2026, the Vercel integration returned `Deployment rate limited — retry in 24 hours` for the four linked projects on this review branch. These were preview/status checks, not production releases. Preview-disable update requests were accepted for duplicate admin projects `oydi` and `uyds`, but the project-detail readback did not expose the setting; verify it in the Vercel dashboard. Recheck quota before the next preview or production release; do not repeatedly retry while rate-limited.
 
 ## Explicit non-goals until separately ready
 
