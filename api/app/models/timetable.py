@@ -26,7 +26,7 @@ class TimetableEntry(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     room = Column(String(80), nullable=True)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by_user_id = Column(Integer, nullable=False
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
@@ -35,6 +35,7 @@ class TimetableEntry(Base):
         ForeignKeyConstraint(["school_id", "term_id"], ["terms.school_id", "terms.id"], name="fk_timetable_school_term"),
         ForeignKeyConstraint(["school_id", "subject_id"], ["subjects.school_id", "subjects.id"], name="fk_timetable_school_subject"),
         ForeignKeyConstraint(["school_id", "teacher_user_id"], ["users.school_id", "users.id"], name="fk_timetable_school_teacher"),
+        ForeignKeyConstraint(["school_id", "created_by_user_id"], ["users.school_id", "users.id"], name="fk_timetable_school_creator"),
         CheckConstraint("day_of_week BETWEEN 1 AND 7", name="ck_timetable_day_of_week"),
         CheckConstraint("period_number > 0", name="ck_timetable_period_positive"),
         CheckConstraint("start_time < end_time", name="ck_timetable_time_range"),
