@@ -315,3 +315,31 @@ def test_parent_term_comparison_is_scoped_to_verified_child(client, db_session, 
     assert response.status_code == 200
     assert response.json()["subjects"][0]["change"] == 20.0
 
+def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_session, monkeypatch):
+    school = School(code="PARPDF1", name="Parent PDF School")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(school_id=school.id, student_number="PAR-PDF-1",
+                      first_name="Tariro", last_name="Moyo", status="active")
+    subject = Subject(school_id=school.id, name="English")
+    db_session.add_all([learner, subject])
+    db_session.flush()
+    assessment = Assessment(school_id=school.id, subject_id=subject.id,
+                            name="Final", weight=1, max_score=100)
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add(Mark(school_id=school.id, student_id=learner.id,
+                        assessment_id=assessment.id, score=77, status="published"))
+    db_session.commit()
+    parent = SupabasePrincipal(auth_user_id=uuid4(), user_id=9300,
+                                school_id=school.id, role="parent", is_admin=False)
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+    monkeypatch.setattr(portal, "_parent_student",
+                        lambda _principal, student_id, _db: learner if student_id == learner.id else None)
+    response = client.get(f"/portal/parent/children/{learner.id}/report-card.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    denied = client.get("/portal/parent/children/999999/report-card.pdf")
+    assert denied.status_code == 404
+
