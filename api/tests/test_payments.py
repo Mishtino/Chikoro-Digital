@@ -460,6 +460,7 @@ def test_database_rejects_cross_school_payment_allocation(db_session):
     with pytest.raises(IntegrityError):
         db_session.commit()
     db_session.rollback()
+    db_session.connection().exec_driver_sql("PRAGMA foreign_keys=OFF")
 
 
 
