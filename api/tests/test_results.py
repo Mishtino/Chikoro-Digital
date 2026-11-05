@@ -198,3 +198,79 @@ def test_platform_admin_cannot_use_school_mark_review_endpoint(client, seed_two_
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     response = client.get("/results/marks", params={"school_id": seed_two_schools["s1"].id})
     assert response.status_code == 403
+
+
+def test_class_performance_analytics_only_uses_published_marks_and_respects_teacher_classes(
+    client, db_session, seed_two_schools
+):
+    from app.models.student import Student
+    from app.models.results import Mark
+    from app.models.class_assignment import ClassTeacherAssignment
+
+    school = seed_two_schools["s1"]
+    teacher_user = seed_two_schools["u1"]
+    term = Term(school_id=school.id, name="Term 2", academic_year="2026")
+    subject = Subject(school_id=school.id, name="Mathematics", code="AN-MATH")
+    db_session.add_all([term, subject])
+    db_session.flush()
+
+    form_one = Student(
+        school_id=school.id, student_number="AN-001", first_name="Tariro",
+        last_name="Moyo", form="Form 1", status="active",
+    )
+    form_two = Student(
+        school_id=school.id, student_number="AN-002", first_name="Tendai",
+        last_name="Ncube", form="Form 2", status="active",
+    )
+    db_session.add_all([form_one, form_two])
+    db_session.flush()
+
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id, term_id=term.id,
+        name="End of term", weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=form_one.id, assessment_id=assessment.id,
+             score=80, status="published", entered_by_user_id=teacher_user.id),
+        Mark(school_id=school.id, student_id=form_two.id, assessment_id=assessment.id,
+             score=20, status="published", entered_by_user_id=teacher_user.id),
+        Mark(school_id=school.id, student_id=form_one.id, assessment_id=assessment.id,
+             score=10, status="draft", entered_by_user_id=teacher_user.id),
+    ])
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 1", teacher_user_id=teacher_user.id,
+        assigned_by_user_id=teacher_user.id, is_active=True,
+    ))
+    db_session.commit()
+
+    teacher = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="teacher", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: teacher
+    response = client.get("/results/analytics/class-performance", params={"term_id": term.id})
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 1
+    row = response.json()["results"][0]
+    assert row["class_name"] == "Form 1"
+    assert row["learner_count"] == 1
+    assert row["mark_count"] == 1
+    assert row["average_percent"] == 80
+    assert row["pass_rate_percent"] == 100
+
+    denied = client.get(
+        "/results/analytics/class-performance",
+        params={"term_id": term.id, "class_name": "Form 2"},
+    )
+    assert denied.status_code == 403
+
+    owner = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: owner
+    all_classes = client.get("/results/analytics/class-performance", params={"term_id": term.id})
+    assert all_classes.status_code == 200
+    assert {row["class_name"] for row in all_classes.json()["results"]} == {"Form 1", "Form 2"}
