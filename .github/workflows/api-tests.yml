@@ -6,10 +6,16 @@ on:
       - "api/**"
       - "web/**"
       - "admin/**"
+      - "supabase/**"
+      - "docs/**"
       - ".github/workflows/api-tests.yml"
   pull_request:
     paths:
       - "api/**"
+      - "web/**"
+      - "admin/**"
+      - "supabase/**"
+      - "docs/**"
       - ".github/workflows/api-tests.yml"
 
 jobs:
