@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Numeric, Boolean, JSON, Text
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Numeric, Boolean, JSON, Text, UniqueConstraint
 
 from app.database import Base
 
@@ -17,6 +17,8 @@ class Subject(Base):
     name = Column(String(120), nullable=False)
     code = Column(String(40), nullable=True)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+    __table_args__ = (UniqueConstraint("school_id", "id", name="uq_subjects_school_id_id"),)
 
 
 class Assessment(Base):
