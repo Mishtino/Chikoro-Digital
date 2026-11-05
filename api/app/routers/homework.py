@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -51,6 +52,13 @@ class SubmissionCreate(BaseModel):
 class SubmissionMark(BaseModel):
     feedback: Optional[str] = Field(default=None, max_length=5000)
     score: Optional[float] = Field(default=None, ge=0)
+
+    @field_validator("score")
+    @classmethod
+    def finite_score(cls, value):
+        if value is not None and (not math.isfinite(value) or value < 0):
+            raise ValueError("Score must be a finite non-negative number")
+        return value
 
 
 def _school_id(principal: SupabasePrincipal) -> int:
