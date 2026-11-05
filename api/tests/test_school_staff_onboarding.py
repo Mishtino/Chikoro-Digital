@@ -18,8 +18,9 @@ def _school_admin(user, role="owner"):
 
 
 def _install_profiles(db_session, monkeypatch):
+    db_session.execute(sql_text("DROP TABLE IF EXISTS profiles"))
     db_session.execute(sql_text("""
-        CREATE TABLE IF NOT EXISTS profiles (
+        CREATE TABLE profiles (
             id TEXT PRIMARY KEY, local_user_id INTEGER UNIQUE,
             role TEXT NOT NULL, school_id INTEGER, is_active BOOLEAN NOT NULL,
             created_at TEXT, updated_at TEXT
