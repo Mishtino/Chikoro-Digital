@@ -425,6 +425,8 @@ def test_payment_and_invoice_detail_reads_hide_other_school_records(client, db_s
 
 
 def test_database_rejects_cross_school_payment_allocation(db_session):
+    # This test specifically verifies the database-level composite tenant FKs.
+    db_session.connection().exec_driver_sql("PRAGMA foreign_keys=ON")
     school = School(code="PAY012", name="Allocation Tenant")
     other_school = School(code="PAY013", name="Foreign Allocation Tenant")
     db_session.add_all([school, other_school])
