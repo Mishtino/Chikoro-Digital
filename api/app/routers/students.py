@@ -250,6 +250,7 @@ def list_students(school_id: Optional[int] = Query(None), principal: SupabasePri
             form=s.form,
             status=s.status,
             activated=bool(s.activated_at),
+            portal_enabled=bool(s.portal_user_id),
         )
         for s in students
     ]
