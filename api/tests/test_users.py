@@ -95,7 +95,7 @@ def test_vortex_admin_can_view_one_school_staff_only(client, seed_two_schools, d
     response = client.get(f"/users?school_id={data['s1'].id}")
 
     assert response.status_code == 200
-    assert [row["email"] for row in response.json()] == ["teacher1@test.com"]
+    assert [row["email"] for row in response.json()] == ["owner1@test.com", "teacher1@test.com"]
 
 
 def test_platform_support_cannot_access_school_staff_directory(client, seed_two_schools):
