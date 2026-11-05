@@ -1044,6 +1044,7 @@ def test_paynow_idempotency_lookup_is_scoped_to_attempt_school(db_session):
     db_session.commit()
 
     assert paynow._record_verified_payment(db_session, attempt) is True
+    db_session.flush()
 
     own_payment = db_session.query(Payment).filter(
         Payment.school_id == own_school.id,
