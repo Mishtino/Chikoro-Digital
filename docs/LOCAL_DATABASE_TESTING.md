@@ -51,3 +51,8 @@ docker compose -f docker-compose.local.yml --profile local-db down -v
 ## Current limitations
 
 This Compose file only provisions PostgreSQL 17. It does not automatically apply any migration, seed data, change application configuration, or connect to Supabase. The existing SQLite quick-start remains available for lightweight API development. Use this PostgreSQL instance for database-specific rehearsal before any paid or production environment is considered.
+
+
+## Command target guard
+
+Before invoking migration tooling, wrap the command with `python scripts/local_db_guard.py -- <command>` and set `DATABASE_URL` to the documented loopback connection string. The guard accepts only PostgreSQL URLs for `localhost` or `127.0.0.1`, port `55432`, and database `chikoro_local`. It rejects URL query parameters and fragments as well, preventing libpq connection options from overriding the validated host. The guard is a safety check, not a substitute for reviewing migration SQL; it does not make Supabase-specific migrations compatible with vanilla PostgreSQL.
