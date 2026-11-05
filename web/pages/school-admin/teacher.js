@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import HomeworkTeacherPanel from '../../components/HomeworkTeacherPanel';
 
 export default function TeacherWorkspace() {
   const router = useRouter();
@@ -164,6 +165,7 @@ export default function TeacherWorkspace() {
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: '#fff1f0', color: '#b42318' }}>{error}</p>}
       {notice && <p role="status" style={{ padding: 12, borderRadius: 8, background: '#ecfdf3', color: '#067647' }}>{notice}</p>}
       {loading ? <p role="status">Loading academic records…</p> : !error && <>
+        <HomeworkTeacherPanel />
         <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 18 }}>
           <h2 style={{ margin: '0 0 6px', fontSize: 18 }}>Parent communications</h2>
           <p style={{ color: '#64748b', fontSize: 13 }}>Only conversations for learners in your currently assigned classes appear here.</p>
