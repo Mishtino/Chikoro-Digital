@@ -15,6 +15,6 @@ from app.models.parent_teacher_message import ParentTeacherConversation, ParentT
 __all__ = [
     "School", "User", "AuditLog", "Student", "Contact", "Term", "FeeItem",
     "FeeStructure", "FeeStructureItem", "Invoice", "InvoiceLine", "Payment",
-    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry", "ClassTeacherAssignment",
+    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry", "ClassTeacherAssignment", "ParentTeacherConversation", "ParentTeacherMessage",
 ]
 
