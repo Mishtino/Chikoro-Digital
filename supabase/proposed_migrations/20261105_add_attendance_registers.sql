@@ -8,6 +8,9 @@ BEGIN;
 -- boundaries even when an API caller accidentally supplies mixed identifiers.
 DO $attendance$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_users_school_id_id' AND conrelid = 'public.users'::regclass) THEN
+        ALTER TABLE public.users ADD CONSTRAINT uq_users_school_id_id UNIQUE (school_id, id);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_students_school_id_id' AND conrelid = 'public.students'::regclass) THEN
         ALTER TABLE public.students ADD CONSTRAINT uq_students_school_id_id UNIQUE (school_id, id);
     END IF;
@@ -23,7 +26,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_sessions (
     class_name varchar(40) NOT NULL,
     attendance_date date NOT NULL,
     status varchar(20) NOT NULL DEFAULT 'draft',
-    recorded_by_user_id integer NOT NULL REFERENCES public.users(id),
+    recorded_by_user_id integer NOT NULL,
     submitted_at timestamptz NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -31,6 +34,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_sessions (
         UNIQUE (school_id, class_name, attendance_date),
     CONSTRAINT uq_attendance_sessions_school_id_id UNIQUE (school_id, id),
     CONSTRAINT fk_attendance_sessions_school_term FOREIGN KEY (school_id, term_id) REFERENCES public.terms(school_id, id),
+    CONSTRAINT fk_attendance_sessions_school_actor FOREIGN KEY (school_id, recorded_by_user_id) REFERENCES public.users(school_id, id),
     CONSTRAINT ck_attendance_session_status
         CHECK (status IN ('draft', 'submitted')),
     CONSTRAINT ck_attendance_class_name_nonempty
@@ -49,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
     student_id integer NOT NULL,
     status varchar(20) NOT NULL,
     note text NULL,
-    marked_by_user_id integer NOT NULL REFERENCES public.users(id),
+    marked_by_user_id integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_attendance_record_session_student
@@ -58,6 +62,8 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
         FOREIGN KEY (school_id, session_id) REFERENCES public.attendance_sessions(school_id, id),
     CONSTRAINT fk_attendance_records_school_student
         FOREIGN KEY (school_id, student_id) REFERENCES public.students(school_id, id),
+    CONSTRAINT fk_attendance_records_school_actor
+        FOREIGN KEY (school_id, marked_by_user_id) REFERENCES public.users(school_id, id),
     CONSTRAINT ck_attendance_record_status
         CHECK (status IN ('present', 'absent', 'late', 'excused'))
 );
