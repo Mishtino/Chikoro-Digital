@@ -42,6 +42,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 - Never expose another learner's data by changing a URL or request identifier.
 - Parent access is derived only from active, verified guardian links.
 - Student access is restricted to the authenticated student's own record.
+- Homework assignment and text-submission APIs are implemented on the feature branch: teachers create work only for assigned classes, students see published work for their own class and may submit once before the deadline, and parents see assignment/submission status only for verified linked learners. Teachers can review and mark submissions. The proposed homework migration must be validated in staging before API/UI release. File attachments are deliberately deferred until private storage and signed-upload controls are implemented.
 - Notifications must not disclose sensitive student details on lock screens by default.
 
 ## Experience B — School Administration Portal
