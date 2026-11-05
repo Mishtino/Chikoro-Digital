@@ -101,3 +101,26 @@ def test_paid_confirmation_rejects_fractional_cent_amount_and_non_finite_values(
         {"hash_verified": True, "reference": "PN-EXACT", "amount": "NaN"},
         attempt,
     )
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected"),
+    [
+        ("0.10", "0.10"),
+        ("0.30", "0.30"),
+        ("10.000", "10.00"),
+    ],
+)
+def test_paynow_amount_formatting_preserves_decimal_cents(amount, expected):
+    from decimal import Decimal
+    from app.services.paynow import _format_amount
+
+    assert _format_amount(Decimal(amount)) == expected
+
+
+@pytest.mark.parametrize("amount", ["0", "-1.00", "1.001", "NaN", "Infinity"])
+def test_paynow_amount_formatting_rejects_invalid_precision_or_value(amount):
+    from app.services.paynow import _format_amount
+
+    with pytest.raises(ValueError):
+        _format_amount(amount)
