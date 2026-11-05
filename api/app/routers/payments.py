@@ -117,7 +117,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     )
     db.add(receipt)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         error_text = str(getattr(exc, "orig", exc))
