@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Brand from '../components/Brand';
 
 export default function Home() {
   const [code,setCode]=useState(''); const router=useRouter();
