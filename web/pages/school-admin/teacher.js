@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
+import Brand from '../../components/Brand';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
 import HomeworkTeacherPanel from '../../components/HomeworkTeacherPanel';
 
@@ -161,7 +162,7 @@ export default function TeacherWorkspace() {
   return <main style={{ minHeight: '100vh', background: '#f5f7fb', padding: '30px 18px', color: '#172033' }}>
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-        <div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>CHIKORO DIGITAL · TEACHER WORKSPACE</p><h1 style={{ margin: '7px 0 4px' }}>Academic work</h1><p style={{ margin: 0, color: '#64748b' }}>Manage subjects, assessments and draft learner marks.</p></div>
+        <div><div style={{ marginBottom: 10 }}><Brand compact /></div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>SCHOOL WORKSPACE</p><h1 style={{ margin: '7px 0 4px' }}>Academic work</h1><p style={{ margin: 0, color: '#64748b' }}>Manage subjects, assessments and draft learner marks.</p></div>
         <div style={{ display: 'flex', gap: 8 }}><a href="/school-admin/attendance" style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', color: '#172033', textDecoration: 'none' }}>Attendance</a><a href="/school-admin/timetable" style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', color: '#172033', textDecoration: 'none' }}>Timetable</a><a href="/school-admin/classes" style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', color: '#172033', textDecoration: 'none' }}>My classes</a><button onClick={signOut} style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', cursor: 'pointer' }}>Sign out</button></div>
       </header>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: '#fff1f0', color: '#b42318' }}>{error}</p>}
