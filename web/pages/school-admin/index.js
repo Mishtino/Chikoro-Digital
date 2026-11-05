@@ -106,6 +106,7 @@ export default function SchoolAdminDashboard() {
             <Link href="/school-admin/staff" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Open staff directory →</Link>
             <Link href="/school-admin/students" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Manage learners →</Link>
             <Link href="/school-admin/finance" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Fees & payments →</Link>
+            <Link href="/school-admin/academics" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Terms & results →</Link>
             <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, margin: 0 }}>Manage school staff access from one place. Timetable, attendance and detailed finance screens are being developed as separate modules.</p>
           </article>
         </section>
