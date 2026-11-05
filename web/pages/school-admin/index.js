@@ -104,7 +104,8 @@ export default function SchoolAdminDashboard() {
           <article style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 22 }}>
             <h2 style={{ margin: '0 0 14px', fontSize: 18 }}>Administration</h2>
             <Link href="/school-admin/staff" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Open staff directory →</Link>
-            <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, margin: 0 }}>Manage school staff access from one place. Student records, timetable, attendance and detailed finance screens are being developed as separate modules.</p>
+            <Link href="/school-admin/students" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Manage learners →</Link>
+            <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, margin: 0 }}>Manage school staff access from one place. Timetable, attendance and detailed finance screens are being developed as separate modules.</p>
           </article>
         </section>
       </>}
