@@ -315,27 +315,61 @@ def test_parent_term_comparison_is_scoped_to_verified_child(client, db_session, 
     assert response.status_code == 200
     assert response.json()["subjects"][0]["change"] == 20.0
 
-def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_session, monkeypatch):
+def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_session):
+    from sqlalchemy import text
+    from app.models.student import Contact
+
     school = School(code="PARPDF1", name="Parent PDF School")
     db_session.add(school)
     db_session.flush()
     learner = Student(school_id=school.id, student_number="PAR-PDF-1",
                       first_name="Tariro", last_name="Moyo", status="active")
+    unlinked_learner = Student(school_id=school.id, student_number="PAR-PDF-2",
+                               first_name="Tawanda", last_name="Moyo", status="active")
     subject = Subject(school_id=school.id, name="English")
-    db_session.add_all([learner, subject])
+    db_session.add_all([learner, unlinked_learner, subject])
     db_session.flush()
+    contact = Contact(school_id=school.id, student_id=learner.id,
+                       name="Verified parent", relationship="parent", is_primary=True)
+    db_session.add(contact)
     assessment = Assessment(school_id=school.id, subject_id=subject.id,
                             name="Final", weight=1, max_score=100)
     db_session.add(assessment)
     db_session.flush()
     db_session.add(Mark(school_id=school.id, student_id=learner.id,
                         assessment_id=assessment.id, score=77, status="published"))
+    profile_id = uuid4()
     db_session.commit()
-    parent = SupabasePrincipal(auth_user_id=uuid4(), user_id=9300,
+
+    # Exercise the real guardian-link authorization query at the PDF route,
+    # not a mocked _parent_student helper.
+    db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
+    db_session.execute(text("""
+        CREATE TABLE public.contacts AS
+        SELECT id, school_id, student_id FROM contacts
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.students AS
+        SELECT id, school_id, status FROM students
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.guardian_links (
+            profile_id TEXT NOT NULL,
+            contact_id INTEGER NOT NULL,
+            school_id INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL,
+            verified_at TEXT
+        )
+    """))
+    db_session.execute(text("""
+        INSERT INTO public.guardian_links
+            (profile_id, contact_id, school_id, is_active, verified_at)
+        VALUES (:profile, :contact, :school, true, '2026-11-05T10:00:00Z')
+    """), {"profile": str(profile_id), "contact": contact.id, "school": school.id})
+
+    parent = SupabasePrincipal(auth_user_id=profile_id, user_id=9300,
                                 school_id=school.id, role="parent", is_admin=False)
     app.dependency_overrides[get_supabase_principal] = lambda: parent
-    monkeypatch.setattr(portal, "_parent_student",
-                        lambda _principal, student_id, _db: learner if student_id == learner.id else None)
     response = client.get(f"/portal/parent/children/{learner.id}/report-card.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -343,9 +377,13 @@ def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_se
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.content.startswith(b"%PDF")
+
+    # Same-school siblings are not implicitly visible without their own
+    # verified guardian link; an unknown learner ID is also hidden.
+    unlinked = client.get(f"/portal/parent/children/{unlinked_learner.id}/report-card.pdf")
+    assert unlinked.status_code == 404
     denied = client.get("/portal/parent/children/999999/report-card.pdf")
     assert denied.status_code == 404
-
 
 
 def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
