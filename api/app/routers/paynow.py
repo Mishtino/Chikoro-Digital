@@ -39,13 +39,20 @@ class PaynowInitiateRequest(BaseModel):
 
 
 
-def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
-    """Bind a signed Paynow Paid response to the exact local checkout."""
+def _verified_poll_reference(polled: dict, attempt: PaynowAttempt) -> bool:
+    """Require a signed provider poll response bound to this checkout reference."""
     if not polled.get("hash_verified"):
         return False
     provider_reference = polled.get("reference") or polled.get("Reference")
+    return provider_reference == attempt.reference
+
+
+def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
+    """Bind a signed Paynow Paid response and exact amount to the local checkout."""
+    if not _verified_poll_reference(polled, attempt):
+        return False
     provider_amount = polled.get("amount") or polled.get("Amount")
-    if provider_reference != attempt.reference or provider_amount is None:
+    if provider_amount is None:
         return False
     try:
         from decimal import Decimal, InvalidOperation
@@ -387,7 +394,16 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
         polled = poll_transaction(attempt.poll_url, integration_key)
     attempt.hash_verified = bool(polled.get("hash_verified"))
 
-    status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
+    # Never use callback form fields as authoritative payment status. The
+    # callback only wakes this handler; the signed provider poll is the source
+    # of truth for every state transition, not only Paid.
+    if not _verified_poll_reference(polled, attempt):
+        attempt.status = "unverified"
+        attempt.hash_verified = False
+        db.commit()
+        return {"status": "provider status could not be verified"}
+
+    status_val = (polled.get("Status") or polled.get("status") or "").lower()
 
     if status_val == "paid" and not _verified_paid_confirmation(polled, attempt):
         attempt.status = "unverified"
@@ -402,10 +418,18 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "verified payment could not be matched to its invoice"}
     elif status_val in ("cancelled", "failed", "disputed"):
         attempt.status = status_val
-    else:
+    elif status_val in ("sent", "pending", "awaiting delivery"):
         attempt.status = "sent"
+    else:
+        # Unknown signed statuses are non-authoritative for local state.
+        db.commit()
+        return {"status": "provider status not recognized"}
 
-    attempt.paynow_reference = data.get("paynowreference") or data.get("PaynowReference") or attempt.paynow_reference
+    attempt.paynow_reference = (
+        polled.get("paynowreference")
+        or polled.get("PaynowReference")
+        or attempt.paynow_reference
+    )
     db.commit()
     return {"status": "ok"}
 
@@ -445,6 +469,12 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             continue
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
+        if not _verified_poll_reference(polled, att):
+            att.hash_verified = False
+            att.status = "unverified"
+            updated += 1
+            continue
+
         st = (polled.get("Status") or polled.get("status") or "").lower()
         if st == "paid" and not _verified_paid_confirmation(polled, att):
             att.status = "unverified"
@@ -456,9 +486,13 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             else:
                 att.status = "unverified"
             updated += 1
-        elif st in ("cancelled", "failed"):
+        elif st in ("cancelled", "failed", "disputed"):
             att.status = st
             updated += 1
+        elif st in ("sent", "pending", "awaiting delivery"):
+            if att.status != "sent":
+                att.status = "sent"
+                updated += 1
     db.commit()
     return {"updated": updated}
 
