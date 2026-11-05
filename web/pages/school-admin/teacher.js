@@ -22,6 +22,7 @@ export default function TeacherWorkspace() {
   const [conversations, setConversations] = useState([]);
   const [selectedConversationId, setSelectedConversationId] = useState('');
   const [messages, setMessages] = useState([]);
+  const [performanceRows, setPerformanceRows] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
 
@@ -48,14 +49,15 @@ export default function TeacherWorkspace() {
           router.replace('/portal/login');
           return;
         }
-        const [studentRows, termRows, subjectRows, assessmentRows, communicationData] = await Promise.all([
-          api('/students'), api('/fees/terms'), api('/results/subjects'), api('/results/assessments'), api('/communications/conversations'),
+        const [studentRows, termRows, subjectRows, assessmentRows, communicationData, performanceData] = await Promise.all([
+          api('/students'), api('/fees/terms'), api('/results/subjects'), api('/results/assessments'), api('/communications/conversations'), api('/results/analytics/class-performance'),
         ]);
         if (!active) return;
         setStudents(studentRows || []);
         setTerms(termRows || []);
         setSubjects(subjectRows || []);
         setAssessments(assessmentRows || []);
+        setPerformanceRows(performanceData.results || []);
         const inbox = communicationData.conversations || [];
         setConversations(inbox);
         setSelectedConversationId(inbox.length ? String(inbox[0].id) : '');
@@ -166,6 +168,20 @@ export default function TeacherWorkspace() {
       {notice && <p role="status" style={{ padding: 12, borderRadius: 8, background: '#ecfdf3', color: '#067647' }}>{notice}</p>}
       {loading ? <p role="status">Loading academic records…</p> : !error && <>
         <HomeworkTeacherPanel />
+        <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 18 }}>
+          <h2 style={{ margin: '0 0 6px', fontSize: 18 }}>My class performance</h2>
+          <p style={{ color: '#64748b', fontSize: 13 }}>Published marks from your currently assigned classes only. Draft and approved marks are excluded.</p>
+          {!performanceRows.length ? <p style={{ color: '#64748b' }}>No published class results are available yet.</p> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 560 }}>
+            <thead><tr>{['Class', 'Subject', 'Learners', 'Average', 'Pass rate'].map(label => <th key={label} style={{ padding: 9, borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: 12 }}>{label}</th>)}</tr></thead>
+            <tbody>{performanceRows.map((row, index) => <tr key={row.class_name + '-' + row.subject_id + '-' + index}>
+              <td style={{ padding: 9, borderBottom: '1px solid #edf1f5', fontWeight: 600 }}>{row.class_name || 'Unassigned'}</td>
+              <td style={{ padding: 9, borderBottom: '1px solid #edf1f5' }}>{row.subject_name}</td>
+              <td style={{ padding: 9, borderBottom: '1px solid #edf1f5' }}>{row.learner_count}</td>
+              <td style={{ padding: 9, borderBottom: '1px solid #edf1f5' }}>{Number(row.average_percent).toFixed(1)}%</td>
+              <td style={{ padding: 9, borderBottom: '1px solid #edf1f5' }}>{row.pass_rate_percent == null ? '—' : Number(row.pass_rate_percent).toFixed(1) + '%'}</td>
+            </tr>)}</tbody>
+          </table></div>}
+        </section>
         <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 18 }}>
           <h2 style={{ margin: '0 0 6px', fontSize: 18 }}>Parent communications</h2>
           <p style={{ color: '#64748b', fontSize: 13 }}>Only conversations for learners in your currently assigned classes appear here.</p>
