@@ -189,9 +189,8 @@ def create_conversation(
             subject=payload.subject, status="open",
         )
         db.add(conversation)
-        db.commit()
-        db.refresh(conversation)
-        write_audit(db, principal, "communication.conversation.create",
+        db.flush()
+        db.refresh(conversation)$3(db, principal, "communication.conversation.create",
                     "parent_teacher_conversation", conversation.id,
                     {"student_id": student.id, "teacher_user_id": teacher.id},
                     school_id=school_id)
@@ -282,9 +281,8 @@ def send_message(
     )
     db.add(message)
     conversation.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(message)
-    write_audit(db, principal, "communication.message.send",
+    db.flush()
+    db.refresh(message)$3(db, principal, "communication.message.send",
                 "parent_teacher_conversation", conversation.id,
                 {"message_id": message.id, "body_length": len(payload.body)},
                 school_id=conversation.school_id)
@@ -303,7 +301,7 @@ def close_conversation(
 ):
     conversation, _student = _conversation_for_actor(db, principal, conversation_id)
     conversation.status = "closed"
-    db.commit()
+    db.flush()
     write_audit(db, principal, "communication.conversation.close",
                 "parent_teacher_conversation", conversation.id, {},
                 school_id=conversation.school_id)
