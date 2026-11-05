@@ -1,6 +1,6 @@
 from typing import List, Optional
+from decimal import Decimal
 import uuid
-import math
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from pydantic import BaseModel
@@ -32,7 +32,7 @@ class PaynowSettingsUpdate(BaseModel):
 class PaynowInitiateRequest(BaseModel):
     student_id: Optional[int] = None
     invoice_ids: Optional[List[int]] = None
-    amount: Optional[float] = None
+    amount: Optional[Decimal] = None
     school_id: Optional[int] = None
     return_url: Optional[str] = None
     result_url: Optional[str] = None
@@ -256,8 +256,8 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
     # determine amount
     if payload.amount is not None:
         amount = payload.amount
-        if not math.isfinite(amount) or amount <= 0:
-            raise HTTPException(status_code=422, detail="Payment amount must be a finite positive value")
+        if not is_valid_payment_amount(amount):
+            raise HTTPException(status_code=422, detail="Payment amount must be finite, positive, and have no more than two decimal places")
         if payload.invoice_ids and to_decimal(amount) > invoice_balance(db, selected_invoice):
             raise HTTPException(status_code=422, detail="Payment amount exceeds invoice balance")
         if not payload.invoice_ids and payload.student_id and to_decimal(amount) > _student_usd_balance(db, sid, payload.student_id):
