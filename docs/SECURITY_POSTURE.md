@@ -59,3 +59,10 @@ These are point-in-time findings, not a guarantee that the database remains unch
 The repository's three former migration drafts (`202611040001`–`003`) did not match the four migration versions recorded by the live Supabase project. They have been moved from `supabase/migrations/` to `supabase/proposed_migrations/` so the normal Supabase migration command cannot accidentally apply them. The standard migration directory now contains a README that explicitly blocks `supabase db push` until the original live migration SQL is recovered and a canonical history is reconstructed.
 
 A proposed forward-only `profiles_role_check` migration is also stored in `supabase/proposed_migrations/`. It preserves live foreign keys, RLS flags, grants, and the own-profile SELECT policy. It is for staging review only. No production migration or identity link was applied.
+
+
+## Financial uniqueness backstops prepared — 5 November 2026
+
+The live read-only audit found zero duplicate non-NULL payment references (including within schools) and zero duplicate `(payment_id, invoice_id)` allocation pairs. The SQLAlchemy models now declare a unique `(school_id, reference)` constraint for non-NULL payment references and a unique `(payment_id, invoice_id)` constraint for allocations. Tests verify that a school may reuse an external reference used by another school, but cannot duplicate its own, and that one payment cannot allocate twice to the same invoice.
+
+A corresponding staging-only SQL proposal is stored at `supabase/proposed_migrations/20261105_add_financial_uniqueness_backstops.sql`. It checks for duplicates and pre-existing constraints before adding either unique constraint. These constraints have **not** been applied to the live database. The proposal notes that PostgreSQL unique-constraint creation takes table locks and must be scheduled appropriately after staging review.
