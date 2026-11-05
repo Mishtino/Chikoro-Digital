@@ -4,6 +4,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
@@ -11,7 +12,7 @@ from app.models.results import Subject, Assessment, Mark
 from app.models.student import Student
 from app.models.fee import Term
 from app.services.audit import write_audit
-from app.services.class_access import require_teacher_class
+from app.services.class_access import require_teacher_class, assigned_class_names
 
 router = APIRouter(prefix="/results", tags=["results"])
 
@@ -255,6 +256,83 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
     db.commit()
     write_audit(db, principal, "marks.publish", "assessment", assessment_id, {"count": len(marks)}, school_id=sid)
     return {"published": len(marks)}
+
+
+@router.get("/analytics/class-performance")
+def class_performance_analytics(
+    term_id: Optional[int] = Query(None),
+    subject_id: Optional[int] = Query(None),
+    class_name: Optional[str] = Query(None),
+    school_id: Optional[int] = Query(None),
+    principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')),
+    db: Session = Depends(get_db),
+):
+    """Return aggregated published-mark performance, restricted to assigned teacher classes."""
+    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School academic access required")
+    if term_id is not None and db.query(Term).filter(
+        Term.id == term_id, Term.school_id == sid
+    ).first() is None:
+        raise HTTPException(status_code=404, detail="Term not found in this school")
+    if subject_id is not None and db.query(Subject).filter(
+        Subject.id == subject_id, Subject.school_id == sid
+    ).first() is None:
+        raise HTTPException(status_code=404, detail="Subject not found in this school")
+
+    query = (
+        db.query(
+            Student.form.label("class_name"),
+            Subject.id.label("subject_id"),
+            Subject.name.label("subject_name"),
+            func.count(Mark.id).label("mark_count"),
+            func.count(func.distinct(Student.id)).label("learner_count"),
+            func.avg((Mark.score / Assessment.max_score) * 100).label("average_percent"),
+            func.sum(case((Mark.score >= Assessment.max_score * 0.5, 1), else_=0)).label("pass_count"),
+        )
+        .join(Student, (Student.id == Mark.student_id) & (Student.school_id == Mark.school_id))
+        .join(Assessment, (Assessment.id == Mark.assessment_id) & (Assessment.school_id == Mark.school_id))
+        .join(Subject, (Subject.id == Assessment.subject_id) & (Subject.school_id == Assessment.school_id))
+        .filter(
+            Mark.school_id == sid,
+            Student.school_id == sid,
+            Student.status == "active",
+            Assessment.school_id == sid,
+            Subject.school_id == sid,
+            Mark.status == "published",
+        )
+    )
+    if term_id is not None:
+        query = query.filter(Assessment.term_id == term_id)
+    if subject_id is not None:
+        query = query.filter(Subject.id == subject_id)
+    if class_name is not None:
+        query = query.filter(Student.form == class_name)
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed = assigned_class_names(db, principal, sid)
+        if not allowed:
+            return {"school_id": sid, "term_id": term_id, "results": []}
+        if class_name is not None and class_name not in allowed:
+            raise HTTPException(status_code=403, detail="You are not assigned to this class")
+        query = query.filter(Student.form.in_(sorted(allowed)))
+
+    rows = query.group_by(Student.form, Subject.id, Subject.name).order_by(
+        Student.form, Subject.name
+    ).limit(500).all()
+    results = []
+    for row in rows:
+        marks = int(row.mark_count or 0)
+        passes = int(row.pass_count or 0)
+        results.append({
+            "class_name": row.class_name,
+            "subject_id": row.subject_id,
+            "subject_name": row.subject_name,
+            "learner_count": int(row.learner_count or 0),
+            "mark_count": marks,
+            "average_percent": round(float(row.average_percent or 0), 2),
+            "pass_rate_percent": round(passes / marks * 100, 2) if marks else None,
+        })
+    return {"school_id": sid, "term_id": term_id, "results": results}
 
 
 @router.get("/report-card/{student_id}")
