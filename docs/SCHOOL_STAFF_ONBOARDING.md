@@ -26,19 +26,20 @@ Design and release-gate document. The school staff directory is read-only today.
 7. Record an audit event with actor, school, target identity, role, outcome, and correlation ID. Do not put invitation tokens or secrets in audit details.
 8. Return a neutral success response. The invitee must complete Supabase's verified invitation flow before access is granted.
 
-## Role changes (not enabled)
+## Role changes (implemented behind a disabled feature gate)
 
 - Re-authorize the actor on every request; do not rely on UI visibility.
 - Allow only transitions in the role matrix above. A headmaster cannot promote anyone to owner or headmaster.
 - Protect the final active owner of a school from accidental removal/demotion; require a separate verified ownership-transfer workflow.
-- Update the local user and profile consistently in one transaction, invalidate/revoke affected sessions where supported, and write an audit event containing old and new roles.
+- The gated role-change endpoint updates the local user and profile in one transaction and writes an audit event containing old and new roles. School reassignment and ownership transfer are not supported.
+- The gated status endpoint updates the local user and profile together. Inactive profiles are rejected by the API principal resolver on every request, so existing Supabase sessions cannot access Chikoro after deactivation.
 - Never permit school reassignment through a normal role-change endpoint.
 
-## Deactivation and reactivation (not enabled)
+## Deactivation and reactivation (implemented behind a disabled feature gate)
 
-- Deactivation must set both the local user and profile inactive, block API authorization immediately, revoke active Auth sessions where supported, and create an immutable audit record.
+- Deactivation sets both the local user and profile inactive and creates an audit record. API authorization checks the active profile on every request, immediately blocking further Chikoro access even if the Supabase session itself remains valid.
 - A school administrator may affect only staff in their own school and may not deactivate themselves or the final active owner.
-- Reactivation requires a fresh authorization check and must not silently restore an obsolete role or school association.
+- Reactivation requires a fresh authorization check, an active school, and a consistent existing role/school link; it does not restore an obsolete role or school association.
 - Do not delete staff records as a substitute for deactivation; retain the audit history.
 
 ## Mandatory release gates
@@ -57,4 +58,4 @@ Do not enable the write endpoints until all of the following are verified in a n
 
 ## Current safe behavior
 
-The school invitation endpoint exists but is disabled by default (`SCHOOL_STAFF_INVITATIONS_ENABLED=false`). It also fails closed unless the validated role constraint, server-side Supabase secret, and live-school status are present. If enabled in a reviewed staging environment, it creates an inactive local account and a linked but inactive profile; it does not grant access. A verified-email activation endpoint now activates the local user and profile together and writes an audit event. Staging end-to-end proof, email delivery checks, and release approval are still required before invitations can be enabled. The staff directory remains read-only in the UI, and `POST /users` continues to return HTTP 410.
+The school invitation endpoint exists but is disabled by default (`SCHOOL_STAFF_INVITATIONS_ENABLED=false`). Role and status lifecycle endpoints also exist but are disabled by default (`SCHOOL_STAFF_LIFECYCLE_ENABLED=false`). They fail closed unless the validated role constraint and their required school/identity checks pass. Invitation additionally requires the server-side Supabase secret and live-school status. If enabled in a reviewed staging environment, it creates an inactive local account and a linked but inactive profile; it does not grant access. A verified-email activation endpoint now activates the local user and profile together and writes an audit event. Staging end-to-end proof, email delivery checks, and release approval are still required before invitations can be enabled. The staff directory remains read-only in the UI, and `POST /users` continues to return HTTP 410.
