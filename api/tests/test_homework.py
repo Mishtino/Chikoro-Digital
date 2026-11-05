@@ -204,6 +204,43 @@ def test_homework_private_attachment_upload_completion_and_download(
     assert downloaded.json()["download_url"] == "https://storage.example/download-token"
     assert downloaded.json()["expires_in_seconds"] == 300
 
+    second_upload = client.post(
+        f"/homework/student/submissions/{submission_id}/attachments/upload-url",
+        json={
+            "filename": "mismatch.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 1024,
+        },
+    )
+    assert second_upload.status_code == 201
+    monkeypatch.setattr(
+        homework_router, "inspect_object",
+        lambda path: {"size_bytes": 2048, "content_type": "application/pdf"},
+    )
+    mismatch = client.post(
+        f"/homework/student/attachments/{second_upload.json()['attachment']['id']}/complete"
+    )
+    assert mismatch.status_code == 422
+
+    other_user = User(
+        email="attachment.other@example.com", full_name="Other Learner",
+        password_hash=hash_password("test-password"), role="student",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    other_student = Student(
+        school_id=school.id, student_number="ATT-OTHER", first_name="Other",
+        last_name="Learner", form="Form 1", status="active",
+    )
+    db_session.add_all([other_user, other_student])
+    db_session.flush()
+    other_student.portal_user_id = other_user.id
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(other_user, school)
+    denied = client.get(f"/homework/submissions/{submission_id}/attachments")
+    assert denied.status_code == 404
+    denied_download = client.post(f"/homework/attachments/{attachment_id}/download-url")
+    assert denied_download.status_code == 404
+
 
 def test_homework_attachment_rejects_disallowed_type(client, db_session, seed_two_schools):
     school = seed_two_schools["s1"]
