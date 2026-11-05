@@ -63,3 +63,54 @@ def test_school_admin_overview_denies_platform_admin(client, seed_two_schools):
     app.dependency_overrides[get_supabase_principal] = lambda: _principal(admin, role="vortex_admin", is_admin=True)
     response = client.get("/school-admin/overview")
     assert response.status_code == 403
+
+
+def test_school_admin_overview_aggregates_only_valid_school_payment_allocations(
+    client, seed_two_schools, db_session
+):
+    from decimal import Decimal
+    from app.models.payment import Invoice, Payment, PaymentAllocation
+
+    owner = seed_two_schools["u1"]
+    learner = Student(
+        school_id=owner.school_id,
+        student_number=f"{owner.school_id}-DASH-FEE",
+        first_name="Fee",
+        last_name="Learner",
+        status="active",
+    )
+    db_session.add(learner)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=owner.school_id,
+        student_id=learner.id,
+        invoice_number="DASH-INV-1",
+        currency="USD",
+        total=Decimal("100.00"),
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    payment = Payment(
+        school_id=owner.school_id,
+        student_id=learner.id,
+        amount=Decimal("60.00"),
+        currency="USD",
+        method="manual",
+        voided=False,
+    )
+    db_session.add(payment)
+    db_session.flush()
+    db_session.add(PaymentAllocation(
+        school_id=owner.school_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("60.00"),
+    ))
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(owner)
+    response = client.get("/school-admin/overview")
+    assert response.status_code == 200, response.text
+    assert response.json()["finance"]["open_invoices"] == 1
+    assert response.json()["finance"]["outstanding_by_currency"] == {"USD": "40.00"}
