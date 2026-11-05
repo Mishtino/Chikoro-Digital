@@ -168,7 +168,8 @@ def list_submissions(
         {"id": sub.id, "student_id": student.id, "student_number": student.student_number,
          "student_name": f"{student.first_name} {student.last_name}", "answer_text": sub.answer_text,
          "status": sub.status, "submitted_at": sub.submitted_at.isoformat(),
-         "feedback": sub.feedback, "score": float(sub.score) if sub.score is not None else None}
+         "feedback": sub.feedback, "score": float(sub.score) if sub.score is not None else None,
+         "attachments": _ready_attachment_out(db, sid, sub.id)}
         for sub, student in rows
     ]}
 
@@ -227,6 +228,8 @@ def student_assignments(
     return {"assignments": [
         {**_assignment_out(a, subject),
          "submission_status": submission.status if submission else "not_submitted",
+         "submission_id": submission.id if submission else None,
+         "attachments": _ready_attachment_out(db, student.school_id, submission.id) if submission else [],
          "submitted_at": submission.submitted_at.isoformat() if submission else None,
          "feedback": submission.feedback if submission else None,
          "score": float(submission.score) if submission and submission.score is not None else None}
@@ -330,6 +333,15 @@ class AttachmentUploadRequest(BaseModel):
         if not value or any(ord(char) < 32 for char in value):
             raise ValueError("Invalid attachment metadata")
         return value
+
+
+def _ready_attachment_out(db, school_id, submission_id):
+    rows = db.query(HomeworkAttachment).filter(
+        HomeworkAttachment.school_id == school_id,
+        HomeworkAttachment.submission_id == submission_id,
+        HomeworkAttachment.status == "ready",
+    ).order_by(HomeworkAttachment.created_at.asc()).all()
+    return [_attachment_out(row) for row in rows]
 
 
 def _attachment_out(attachment):
