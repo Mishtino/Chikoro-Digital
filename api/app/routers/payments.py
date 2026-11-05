@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 class PaymentCreate(BaseModel):
     student_id: int
-    amount: float
+    amount: Decimal
     currency: str = "USD"
     method: str = "manual"
     reference: Optional[str] = None
