@@ -121,7 +121,7 @@ export default function TeacherWorkspace() {
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
         <div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>CHIKORO DIGITAL · TEACHER WORKSPACE</p><h1 style={{ margin: '7px 0 4px' }}>Academic work</h1><p style={{ margin: 0, color: '#64748b' }}>Manage subjects, assessments and draft learner marks.</p></div>
-        <button onClick={signOut} style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', cursor: 'pointer' }}>Sign out</button>
+        <div style={{ display: 'flex', gap: 8 }}><a href="/school-admin/attendance" style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', color: '#172033', textDecoration: 'none' }}>Attendance</a><button onClick={signOut} style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 13px', background: '#fff', cursor: 'pointer' }}>Sign out</button></div>
       </header>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: '#fff1f0', color: '#b42318' }}>{error}</p>}
       {notice && <p role="status" style={{ padding: 12, borderRadius: 8, background: '#ecfdf3', color: '#067647' }}>{notice}</p>}
