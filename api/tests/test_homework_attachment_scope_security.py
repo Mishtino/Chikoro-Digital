@@ -1,0 +1,114 @@
+from uuid import uuid4
+
+from app.deps_supabase import SupabasePrincipal, get_supabase_principal
+from app.main import app
+from app.models.class_assignment import ClassTeacherAssignment
+from app.models.homework import HomeworkAssignment, HomeworkAttachment, HomeworkSubmission
+from app.models.results import Subject
+from app.models.student import Student
+from app.models.user import User
+from app.services.auth import hash_password
+
+
+def _principal(user, school):
+    return SupabasePrincipal(
+        auth_user_id=uuid4(),
+        user_id=user.id,
+        school_id=school.id,
+        role=user.role,
+        is_admin=False,
+    )
+
+
+def test_assigned_teacher_cannot_read_another_teachers_submission_attachments(
+    client, db_session, seed_two_schools, monkeypatch
+):
+    from app.routers import homework as homework_router
+
+    monkeypatch.setattr(homework_router.settings, "homework_attachments_enabled", True)
+    school = seed_two_schools["s1"]
+    creator = User(
+        email="homework.creator.scope@example.com",
+        full_name="Assignment Creator",
+        password_hash=hash_password("test-password"),
+        role="teacher",
+        school_id=school.id,
+        is_active=True,
+        is_admin=False,
+    )
+    other_teacher = User(
+        email="homework.other.scope@example.com",
+        full_name="Other Teacher",
+        password_hash=hash_password("test-password"),
+        role="teacher",
+        school_id=school.id,
+        is_active=True,
+        is_admin=False,
+    )
+    learner = Student(
+        school_id=school.id,
+        student_number="HW-SCOPE-001",
+        first_name="Tariro",
+        last_name="Moyo",
+        form="Form 1",
+        status="active",
+    )
+    subject = Subject(school_id=school.id, name="English", code="HW-SCOPE-ENG")
+    db_session.add_all([creator, other_teacher, learner, subject])
+    db_session.flush()
+
+    assignment = HomeworkAssignment(
+        school_id=school.id,
+        class_name="Form 1",
+        subject_id=subject.id,
+        title="Private essay",
+        instructions="Submit your essay.",
+        status="published",
+        created_by_user_id=creator.id,
+    )
+    db_session.add(assignment)
+    db_session.flush()
+    submission = HomeworkSubmission(
+        school_id=school.id,
+        assignment_id=assignment.id,
+        student_id=learner.id,
+        answer_text="My essay.",
+    )
+    db_session.add(submission)
+    db_session.flush()
+    attachment = HomeworkAttachment(
+        school_id=school.id,
+        submission_id=submission.id,
+        uploaded_by_user_id=learner.id if False else creator.id,
+        object_path=f"schools/{school.id}/private-test.pdf",
+        original_filename="private-test.pdf",
+        content_type="application/pdf",
+        size_bytes=1024,
+        status="ready",
+    )
+    db_session.add_all([
+        attachment,
+        ClassTeacherAssignment(
+            school_id=school.id,
+            class_name="Form 1",
+            teacher_user_id=other_teacher.id,
+            assigned_by_user_id=seed_two_schools["u1"].id,
+            is_active=True,
+        ),
+    ])
+    db_session.commit()
+
+    download_calls = []
+    monkeypatch.setattr(
+        homework_router,
+        "create_download_url",
+        lambda *args, **kwargs: download_calls.append(args) or "https://storage.example/private",
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(other_teacher, school)
+
+    listed = client.get(f"/homework/submissions/{submission.id}/attachments")
+    assert listed.status_code == 404
+
+    downloaded = client.post(f"/homework/attachments/{attachment.id}/download-url")
+    assert downloaded.status_code == 404
+    assert download_calls == []
