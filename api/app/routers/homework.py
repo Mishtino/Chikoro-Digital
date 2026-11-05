@@ -109,7 +109,8 @@ def create_assignment(
     )
     db.add(assignment)
     db.flush()
-    db.refresh(assignment)$3(db, principal, "homework.assignment.create", "homework_assignment", assignment.id,
+    db.refresh(assignment)
+    write_audit(db, principal, "homework.assignment.create", "homework_assignment", assignment.id,
                 {"class_name": assignment.class_name, "status": assignment.status}, school_id=sid)
     return {"id": assignment.id, "status": assignment.status}
 
@@ -272,7 +273,8 @@ def submit_homework(
     )
     db.add(submission)
     db.flush()
-    db.refresh(submission)$3(db, principal, "homework.submission.create", "homework_submission", submission.id,
+    db.refresh(submission)
+    write_audit(db, principal, "homework.submission.create", "homework_submission", submission.id,
                 {"assignment_id": assignment.id}, school_id=student.school_id)
     return {"id": submission.id, "status": submission.status, "submitted_at": submission.submitted_at.isoformat()}
 
@@ -434,7 +436,8 @@ def create_homework_attachment_upload(
     )
     db.add(attachment)
     db.flush()
-    db.refresh(attachment)$3(
+    db.refresh(attachment)
+    write_audit(
         db, principal, "homework.attachment.upload_url", "homework_attachment",
         attachment.id, {"submission_id": submission.id, "size_bytes": payload.size_bytes},
         school_id=student.school_id,
