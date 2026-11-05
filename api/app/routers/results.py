@@ -110,11 +110,26 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
             status_code=422,
             detail="A learner can only have one mark per assessment in a single bulk request",
         )
+
+    # Lock assessment rows in a stable order so concurrent bulk submissions
+    # for the same assessment serialize before checking/inserting marks.
+    assessment_ids = sorted({entry.assessment_id for entry in payload.entries})
+    locked_assessments = (
+        db.query(Assessment)
+        .filter(Assessment.school_id == sid, Assessment.id.in_(assessment_ids))
+        .order_by(Assessment.id)
+        .with_for_update()
+        .all()
+    )
+    assessments_by_id = {assessment.id: assessment for assessment in locked_assessments}
+    if len(assessments_by_id) != len(assessment_ids):
+        raise HTTPException(status_code=404, detail="Assessment not found in this school")
+
     created = 0
     for e in payload.entries:
         student = db.query(Student).filter(Student.id == e.student_id, Student.school_id == sid).first()
-        assessment = db.query(Assessment).filter(Assessment.id == e.assessment_id, Assessment.school_id == sid).first()
-        if student is None or assessment is None:
+        assessment = assessments_by_id.get(e.assessment_id)
+        if student is None:
             raise HTTPException(status_code=404, detail="Student or assessment not found in this school")
         if not math.isfinite(e.score) or e.score < 0 or e.score > assessment.max_score:
             raise HTTPException(status_code=422, detail="Mark score must be finite and within the assessment range")
