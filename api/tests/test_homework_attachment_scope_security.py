@@ -1,5 +1,35 @@
 from uuid import uuid4
 
+from sqlalchemy import text
+
+
+def _prepare_guardian_link_schema(db_session):
+    attached = {
+        row[1] for row in db_session.execute(text("PRAGMA database_list")).all()
+    }
+    if "public" not in attached:
+        db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
+    for table in ("guardian_links", "contacts", "students"):
+        db_session.execute(text(f"DROP TABLE IF EXISTS public.{table}"))
+    db_session.execute(text("""
+        CREATE TABLE public.contacts AS
+        SELECT id, school_id, student_id FROM contacts
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.students AS
+        SELECT id, school_id, status FROM students
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.guardian_links (
+            profile_id TEXT NOT NULL,
+            contact_id INTEGER NOT NULL,
+            school_id INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL,
+            verified_at TEXT
+        )
+    """))
+
+
 from app.deps_supabase import SupabasePrincipal, get_supabase_principal
 from app.main import app
 from app.models.class_assignment import ClassTeacherAssignment
@@ -157,18 +187,34 @@ def test_parent_cannot_read_or_download_an_unlinked_child_attachment(
     db_session.add(attachment)
     db_session.commit()
 
+    from app.models.student import Contact
+
+    guardian_contact = Contact(
+        school_id=school.id, student_id=linked_learner.id,
+        name="Verified guardian", relationship="parent", is_primary=True,
+    )
+    db_session.add(guardian_contact)
+    db_session.flush()
+    profile_id = uuid4()
+    _prepare_guardian_link_schema(db_session)
+    db_session.execute(text("""
+        INSERT INTO public.guardian_links
+            (profile_id, contact_id, school_id, is_active, verified_at)
+        VALUES (:profile_id, :contact_id, :school_id, true, '2026-11-05T10:00:00Z')
+    """), {
+        "profile_id": str(profile_id),
+        "contact_id": guardian_contact.id,
+        "school_id": school.id,
+    })
+    db_session.commit()
+
+    # Exercise the real guardian-link SQL through the homework routes. The
+    # linked sibling is authorized; the unlinked sibling must remain hidden.
     parent = SupabasePrincipal(
-        auth_user_id=uuid4(), user_id=9901, school_id=school.id,
+        auth_user_id=profile_id, user_id=9901, school_id=school.id,
         role="parent", is_admin=False,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: parent
-
-    def verified_child(_principal, student_id, _db):
-        if student_id != linked_learner.id:
-            raise HTTPException(status_code=404, detail="Linked student not found")
-        return linked_learner
-
-    monkeypatch.setattr(homework_router, "_parent_student", verified_child)
     download_calls = []
     monkeypatch.setattr(
         homework_router, "create_download_url",
