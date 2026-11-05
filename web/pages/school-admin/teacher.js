@@ -18,6 +18,11 @@ export default function TeacherWorkspace() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversationId, setSelectedConversationId] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   async function refresh() {
     const [studentRows, termRows, subjectRows, assessmentRows] = await Promise.all([
@@ -42,14 +47,17 @@ export default function TeacherWorkspace() {
           router.replace('/portal/login');
           return;
         }
-        const [studentRows, termRows, subjectRows, assessmentRows] = await Promise.all([
-          api('/students'), api('/fees/terms'), api('/results/subjects'), api('/results/assessments'),
+        const [studentRows, termRows, subjectRows, assessmentRows, communicationData] = await Promise.all([
+          api('/students'), api('/fees/terms'), api('/results/subjects'), api('/results/assessments'), api('/communications/conversations'),
         ]);
         if (!active) return;
         setStudents(studentRows || []);
         setTerms(termRows || []);
         setSubjects(subjectRows || []);
         setAssessments(assessmentRows || []);
+        const inbox = communicationData.conversations || [];
+        setConversations(inbox);
+        setSelectedConversationId(inbox.length ? String(inbox[0].id) : '');
         const current = (termRows || []).find(term => term.is_current);
         if (current) setAssessment(value => ({ ...value, term_id: String(current.id) }));
       } catch (e) { if (active) setError(e.message || 'Unable to load teacher workspace.'); }
@@ -112,6 +120,36 @@ export default function TeacherWorkspace() {
     finally { setSaving(false); }
   }
 
+
+  useEffect(() => {
+    let active = true;
+    async function loadThread() {
+      if (!selectedConversationId) { setMessages([]); return; }
+      try {
+        const data = await api('/communications/conversations/' + selectedConversationId + '/messages');
+        if (active) setMessages(data.messages || []);
+      } catch (e) { if (active) setError(e.message || 'Unable to load conversation.'); }
+    }
+    loadThread();
+    return () => { active = false; };
+  }, [selectedConversationId]);
+
+  async function sendTeacherMessage(event) {
+    event.preventDefault();
+    if (!selectedConversationId || !messageDraft.trim() || sendingMessage) return;
+    setSendingMessage(true); setError(''); setNotice('');
+    try {
+      await api('/communications/conversations/' + selectedConversationId + '/messages', {
+        method: 'POST', body: JSON.stringify({ body: messageDraft.trim() }),
+      });
+      const data = await api('/communications/conversations/' + selectedConversationId + '/messages');
+      setMessages(data.messages || []);
+      setMessageDraft('');
+      setNotice('Reply sent to the parent.');
+    } catch (e) { setError(e.message || 'Message could not be sent.'); }
+    finally { setSendingMessage(false); }
+  }
+
   async function signOut() {
     await getSupabaseBrowserClient().auth.signOut();
     router.replace('/portal/login');
@@ -126,6 +164,28 @@ export default function TeacherWorkspace() {
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: '#fff1f0', color: '#b42318' }}>{error}</p>}
       {notice && <p role="status" style={{ padding: 12, borderRadius: 8, background: '#ecfdf3', color: '#067647' }}>{notice}</p>}
       {loading ? <p role="status">Loading academic records…</p> : !error && <>
+        <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 18 }}>
+          <h2 style={{ margin: '0 0 6px', fontSize: 18 }}>Parent communications</h2>
+          <p style={{ color: '#64748b', fontSize: 13 }}>Only conversations for learners in your currently assigned classes appear here.</p>
+          {!conversations.length ? <p>No parent messages yet.</p> : <>
+            <label style={{ display: 'block', fontWeight: 600, marginBottom: 10 }}>Conversation
+              <select value={selectedConversationId} onChange={e => setSelectedConversationId(e.target.value)} style={{ display: 'block', width: '100%', maxWidth: 560, padding: 10, marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }}>
+                {conversations.map(row => <option key={row.id} value={row.id}>{row.student_name} · {row.subject} · {row.parent_name}</option>)}
+              </select>
+            </label>
+            <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #edf1f5', borderRadius: 8, padding: 10 }}>
+              {messages.map(message => <div key={message.id} style={{ padding: 10, margin: '8px 0', borderRadius: 8, background: message.is_mine ? '#eff6ff' : '#f8fafc' }}>
+                <strong>{message.is_mine ? 'You' : 'Parent'}</strong><p style={{ whiteSpace: 'pre-wrap', margin: '5px 0' }}>{message.body}</p><small style={{ color: '#64748b' }}>{new Date(message.created_at).toLocaleString()}</small>
+              </div>)}
+              {!messages.length && <p>No messages in this conversation yet.</p>}
+            </div>
+            <form onSubmit={sendTeacherMessage} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <textarea value={messageDraft} onChange={e => setMessageDraft(e.target.value)} required maxLength={5000} rows={3} placeholder="Reply to the parent…" style={{ flex: '1 1 260px', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 }} />
+              <button type="submit" disabled={sendingMessage || !messageDraft.trim()} style={{ border: 0, borderRadius: 8, background: '#2457c5', color: '#fff', padding: '10px 14px' }}>{sendingMessage ? 'Sending…' : 'Send reply'}</button>
+            </form>
+          </>}
+        </section>
+
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
           {[['Active learners', activeStudents.length], ['Subjects', subjects.length], ['Assessments', assessments.length], ['Academic terms', terms.length]].map(([label, value]) => <article key={label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 17 }}><p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>{label}</p><strong style={{ fontSize: 27 }}>{value}</strong></article>)}
         </section>
