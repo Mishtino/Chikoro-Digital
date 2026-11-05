@@ -397,13 +397,14 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
     # Never use callback form fields as authoritative payment status. The
     # callback only wakes this handler; the signed provider poll is the source
     # of truth for every state transition, not only Paid.
+    status_val = (polled.get("Status") or polled.get("status") or "").lower()
     if not _verified_poll_reference(polled, attempt):
         attempt.status = "unverified"
         attempt.hash_verified = False
         db.commit()
+        if status_val == "paid":
+            return {"status": "payment confirmation hash could not be verified"}
         return {"status": "provider status could not be verified"}
-
-    status_val = (polled.get("Status") or polled.get("status") or "").lower()
 
     if status_val == "paid" and not _verified_paid_confirmation(polled, attempt):
         attempt.status = "unverified"
@@ -469,6 +470,7 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             continue
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
+        att.hash_verified = bool(polled.get("hash_verified"))
         if not _verified_poll_reference(polled, att):
             att.hash_verified = False
             att.status = "unverified"
