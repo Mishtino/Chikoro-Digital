@@ -115,7 +115,7 @@ This addendum records a second static pass over the route decorators and explici
 
 ### Review status
 
-- [x] Enumerated route decorators and explicit ORM/raw-SQL write sites across all 12 router modules.
+- [x] Enumerated route decorators and explicit ORM/raw-SQL write sites across all current router modules, including attendance, timetable and class management.
 - [ ] Inspect every query and mutation branch, not only the route entry point.
 - [ ] Inspect all model relationships, cascades, generated keys and sequence usage.
 - [ ] Confirm whether candidate UPDATE privileges are truly needed on fee structures, subjects, invoices and any other uncertain table.
