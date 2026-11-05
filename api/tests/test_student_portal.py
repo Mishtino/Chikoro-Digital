@@ -156,3 +156,42 @@ def test_student_portal_rejects_active_and_inactive_duplicate_mappings(client, d
         response.json()["detail"] == "Student account is not uniquely linked"
         for response in responses
     )
+
+
+def test_student_results_keep_same_named_subject_records_separate(client, db_session):
+    school = School(code="STU005", name="Duplicate Subject Names")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(
+        school_id=school.id, student_number="DUP-001", first_name="Rudo",
+        last_name="Moyo", status="active", portal_user_id=7300,
+    )
+    db_session.add(learner)
+    db_session.flush()
+    first = Subject(school_id=school.id, name="Mathematics", code="MATH-A")
+    second = Subject(school_id=school.id, name="Mathematics", code="MATH-B")
+    db_session.add_all([first, second])
+    db_session.flush()
+    assessments = [
+        Assessment(school_id=school.id, subject_id=first.id, name="Paper 1", weight=1, max_score=100),
+        Assessment(school_id=school.id, subject_id=second.id, name="Paper 2", weight=1, max_score=100),
+    ]
+    db_session.add_all(assessments)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[0].id,
+             score=70, status="published"),
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[1].id,
+             score=90, status="published"),
+    ])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7300, school_id=school.id,
+        role="student", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/portal/results")
+    assert response.status_code == 200
+    assert len(response.json()["subjects"]) == 2
+    assert {row["average"] for row in response.json()["subjects"]} == {70, 90}
+    assert len({row["subject_id"] for row in response.json()["subjects"]}) == 2
