@@ -97,3 +97,48 @@ def test_class_assignment_rejects_cross_school_teacher_and_teacher_cannot_manage
         "class_name": "Form 3", "teacher_user_id": teacher.id,
     })
     assert denied.status_code == 403
+
+
+def test_teacher_can_enter_marks_only_for_assigned_class(client, db_session, seed_two_schools):
+    from app.models.results import Assessment, Subject
+
+    school = seed_two_schools["s1"]
+    owner = seed_two_schools["u1"]
+    teacher = User(
+        email="marks.teacher@example.com", full_name="Marks Teacher",
+        password_hash=hash_password("test-password"), role="teacher",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    assigned_student = Student(
+        school_id=school.id, student_number="MARK-CLS-1",
+        first_name="Assigned", last_name="Learner", form="Form 1", status="active",
+    )
+    other_student = Student(
+        school_id=school.id, student_number="MARK-CLS-2",
+        first_name="Other", last_name="Learner", form="Form 2", status="active",
+    )
+    subject = Subject(school_id=school.id, name="Science", code="SCI")
+    db_session.add_all([teacher, assigned_student, other_student, subject])
+    db_session.flush()
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id, name="Test",
+        weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(owner, school)
+    assignment = client.post("/classes/assignments", json={
+        "class_name": "Form 1", "teacher_user_id": teacher.id,
+    })
+    assert assignment.status_code == 201
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(teacher, school)
+    allowed = client.post("/results/marks", json={"entries": [{
+        "student_id": assigned_student.id, "assessment_id": assessment.id, "score": 78,
+    }]})
+    assert allowed.status_code == 200
+    denied = client.post("/results/marks", json={"entries": [{
+        "student_id": other_student.id, "assessment_id": assessment.id, "score": 65,
+    }]})
+    assert denied.status_code == 403
