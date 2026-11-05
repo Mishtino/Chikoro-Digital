@@ -4,12 +4,13 @@ import { api } from '../lib/api';
 export default function ParentHomeworkPanel({ studentId }) {
   const [assignments, setAssignments] = useState([]);
   const [error, setError] = useState('');
+  const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
 
   useEffect(() => {
     let active = true;
     if (!studentId) { setAssignments([]); return; }
     api('/homework/parent/children/' + studentId + '/assignments')
-      .then(data => { if (active) setAssignments(data.assignments || []); })
+      .then(data => { if (active) { setAssignments(data.assignments || []); setAttachmentsEnabled(data.attachments_enabled === true); } })
       .catch(e => { if (active) setError(e.message || 'Unable to load homework status.'); });
     return () => { active = false; };
   }, [studentId]);
@@ -43,7 +44,7 @@ export default function ParentHomeworkPanel({ studentId }) {
       <p style={{ color: '#64748b', fontSize: 13 }}>Due: {item.due_at ? new Date(item.due_at).toLocaleString() : 'No deadline set'}</p>
       {item.score !== null && item.score !== undefined && <p><strong>Score:</strong> {item.score}</p>}
       {item.feedback && <p><strong>Teacher feedback:</strong> {item.feedback}</p>}
-      {!!item.attachments?.length && <div><strong>Submitted files</strong><ul>{item.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button></li>)}</ul></div>}
+      {attachmentsEnabled && !!item.attachments?.length && <div><strong>Submitted files</strong><ul>{item.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button></li>)}</ul></div>}
     </article>)}
   </section>;
 }
