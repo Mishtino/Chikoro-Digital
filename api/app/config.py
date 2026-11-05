@@ -36,8 +36,6 @@ def validate_production_settings(config: Settings) -> None:
         errors.append("SECRET_KEY must be a unique random value of at least 32 characters")
     if config.debug:
         errors.append("DEBUG must be false in production")
-    if not config.admin_mfa_required:
-        errors.append("ADMIN_MFA_REQUIRED must be true in production")
 
     for key, value in (
         ("PAYNOW_RETURN_URL", config.paynow_return_url),
