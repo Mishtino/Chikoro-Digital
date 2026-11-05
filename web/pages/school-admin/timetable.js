@@ -16,6 +16,7 @@ export default function TimetableWorkspace() {
   const [classNames, setClassNames] = useState([]);
   const [classFilter, setClassFilter] = useState('all');
   const [dayFilter, setDayFilter] = useState('all');
+  const [termFilter, setTermFilter] = useState('all');
   const [form, setForm] = useState({
     term_id: '', subject_id: '', teacher_user_id: '', class_name: '',
     day_of_week: '1', period_number: '1', start_time: '08:00', end_time: '08:40', room: '',
@@ -68,7 +69,8 @@ export default function TimetableWorkspace() {
   const visibleEntries = useMemo(() => entries.filter(entry =>
     (classFilter === 'all' || entry.class_name === classFilter)
     && (dayFilter === 'all' || String(entry.day_of_week) === dayFilter)
-  ), [entries, classFilter, dayFilter]);
+    && (termFilter === 'all' || String(entry.term_id) === termFilter)
+  ), [entries, classFilter, dayFilter, termFilter]);
 
   async function createEntry(event) {
     event.preventDefault(); setSaving(true); setError(''); setNotice('');
@@ -133,7 +135,7 @@ export default function TimetableWorkspace() {
         <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>Weekly schedule</h2>
-            <div style={{ display: 'flex', gap: 8 }}><select aria-label="Filter timetable by class" value={classFilter} onChange={e => setClassFilter(e.target.value)} style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff' }}><option value="all">All classes</option>{[...new Set(entries.map(e => e.class_name))].sort().map(c => <option key={c} value={c}>{c}</option>)}</select><select aria-label="Filter timetable by day" value={dayFilter} onChange={e => setDayFilter(e.target.value)} style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff' }}><option value="all">All days</option>{DAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}</select></div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><select aria-label="Filter timetable by term" value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff' }}><option value="all">All terms</option>{terms.map(t => <option key={t.id} value={t.id}>{t.name} · {t.academic_year}</option>)}</select><select aria-label="Filter timetable by class" value={classFilter} onChange={e => setClassFilter(e.target.value)} style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff' }}><option value="all">All classes</option>{[...new Set(entries.map(e => e.class_name))].sort().map(c => <option key={c} value={c}>{c}</option>)}</select><select aria-label="Filter timetable by day" value={dayFilter} onChange={e => setDayFilter(e.target.value)} style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff' }}><option value="all">All days</option>{DAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}</select></div>
           </div>
           {visibleEntries.length === 0 ? <p style={{ color: '#64748b' }}>No timetable periods match these filters.</p> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead><tr>{['Day', 'Time', 'Period', 'Class', 'Subject', 'Teacher', 'Room', ...(canManage ? [''] : [])].map((h, i) => <th key={i} style={{ padding: 10, borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: 12 }}>{h}</th>)}</tr></thead>
