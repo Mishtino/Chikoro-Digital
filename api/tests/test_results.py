@@ -322,3 +322,41 @@ def test_report_card_is_restricted_to_assigned_teacher_classes(client, db_sessio
     allowed = client.get(f"/results/report-card/{student.id}")
     assert allowed.status_code == 200
     assert allowed.json()["subjects"][0]["average"] == 88
+
+def test_report_card_pdf_is_downloadable_and_contains_only_published_results(client, db_session, seed_two_schools):
+    from app.models.results import Mark
+    from app.models.student import Student
+
+    school = seed_two_schools["s1"]
+    student = Student(
+        school_id=school.id, student_number="PDF-001",
+        first_name="Rudo", last_name="Moyo", form="Form 2", status="active",
+    )
+    subject = Subject(school_id=school.id, name="Mathematics")
+    db_session.add_all([student, subject])
+    db_session.flush()
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id, name="Final",
+        weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=student.id, assessment_id=assessment.id,
+             score=85, status="published"),
+        Mark(school_id=school.id, student_id=student.id, assessment_id=assessment.id,
+             score=20, status="draft"),
+    ])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=seed_two_schools["u1"].id,
+        school_id=school.id, role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    response = client.get(f"/results/report-card/{student.id}/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert 'attachment; filename="report-card-PDF-001.pdf"' == response.headers["content-disposition"]
+    assert response.content.startswith(b"%PDF")
+
