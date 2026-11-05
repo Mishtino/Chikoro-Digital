@@ -1,4 +1,7 @@
 -- Proposed staging migration only. Review and apply to staging before deploying homework API/UI.
+
+BEGIN;
+
 DO $homework$
 BEGIN
   IF NOT EXISTS (
