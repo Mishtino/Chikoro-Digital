@@ -330,7 +330,7 @@ def test_report_card_pdf_is_downloadable_and_contains_only_published_results(cli
     school = seed_two_schools["s1"]
     student = Student(
         school_id=school.id, student_number="PDF-001",
-        first_name="Rudo", last_name="Moyo", form="Form 2", status="active",
+        first_name="Rudo <Admin>", last_name="Moyo", form="Form 2", status="active",
     )
     subject = Subject(school_id=school.id, name="Mathematics")
     db_session.add_all([student, subject])
