@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.timetable_entries (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_timetable_class_day_period
-        UNIQUE (school_id, class_name, day_of_week, period_number),
+        UNIQUE (school_id, term_id, class_name, day_of_week, period_number),
     CONSTRAINT fk_timetable_school_term
         FOREIGN KEY (school_id, term_id) REFERENCES public.terms(school_id, id),
     CONSTRAINT fk_timetable_school_subject
