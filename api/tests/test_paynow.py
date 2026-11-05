@@ -1003,3 +1003,57 @@ def test_school_user_cannot_request_paynow_settings_for_another_school(client, d
     assert read_response.status_code == 403
     assert write_response.status_code == 403
 
+
+
+
+def test_paynow_idempotency_lookup_is_scoped_to_attempt_school(db_session):
+    own_school = School(code="PN021", name="Settlement Tenant")
+    foreign_school = School(code="PN022", name="Foreign Existing Payment")
+    db_session.add_all([own_school, foreign_school])
+    db_session.flush()
+    own_student = Student(
+        school_id=own_school.id, student_number="PN-SCOPE-OWN",
+        first_name="Own", last_name="Learner", status="active",
+    )
+    foreign_student = Student(
+        school_id=foreign_school.id, student_number="PN-SCOPE-FOREIGN",
+        first_name="Foreign", last_name="Learner", status="active",
+    )
+    db_session.add_all([own_student, foreign_student])
+    db_session.flush()
+    invoice = Invoice(
+        school_id=own_school.id, student_id=own_student.id,
+        invoice_number="PN-SCOPE-INV", currency="USD", total=12,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=own_school.id, student_id=own_student.id,
+        invoice_id=invoice.id, reference="PN-SCOPE-ATTEMPT",
+        amount=12, currency="USD", status="sent",
+    )
+    db_session.add(attempt)
+    db_session.flush()
+    foreign_payment = Payment(
+        school_id=foreign_school.id, student_id=foreign_student.id,
+        amount=12, currency="USD", method="paynow",
+        reference=f"paynow:{attempt.id}",
+    )
+    db_session.add(foreign_payment)
+    db_session.commit()
+
+    assert paynow._record_verified_payment(db_session, attempt) is True
+
+    own_payment = db_session.query(Payment).filter(
+        Payment.school_id == own_school.id,
+        Payment.reference == f"paynow:{attempt.id}",
+    ).one()
+    assert own_payment.id != foreign_payment.id
+    assert db_session.query(PaymentAllocation).filter(
+        PaymentAllocation.payment_id == own_payment.id,
+        PaymentAllocation.invoice_id == invoice.id,
+    ).count() == 1
+    assert db_session.query(Receipt).filter(
+        Receipt.payment_id == own_payment.id,
+    ).count() == 1
