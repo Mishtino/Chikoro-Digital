@@ -152,3 +152,121 @@ def test_parent_student_ids_require_active_verified_same_school_guardian_link():
         "s.school_id = c.school_id",
     ):
         assert required_clause in db.statement
+
+
+def test_parent_attendance_shows_only_submitted_records_for_verified_child(client, db_session, seed_two_schools, monkeypatch):
+    from datetime import date
+    from app.models.attendance import AttendanceSession, AttendanceRecord
+
+    school = seed_two_schools["s1"]
+    owner = seed_two_schools["u1"]
+    learner = Student(
+        school_id=school.id, student_number="ATT-P-001",
+        first_name="Rudo", last_name="Moyo", form="Form 2", status="active",
+    )
+    db_session.add(learner)
+    db_session.flush()
+
+    yesterday = AttendanceSession(
+        school_id=school.id, class_name="Form 2", attendance_date=date(2026, 11, 4),
+        status="submitted", recorded_by_user_id=owner.id,
+    )
+    today = AttendanceSession(
+        school_id=school.id, class_name="Form 2", attendance_date=date(2026, 11, 5),
+        status="submitted", recorded_by_user_id=owner.id,
+    )
+    draft = AttendanceSession(
+        school_id=school.id, class_name="Form 2", attendance_date=date(2026, 11, 6),
+        status="draft", recorded_by_user_id=owner.id,
+    )
+    db_session.add_all([yesterday, today, draft])
+    db_session.flush()
+    db_session.add_all([
+        AttendanceRecord(
+            school_id=school.id, session_id=yesterday.id, student_id=learner.id,
+            status="present", marked_by_user_id=owner.id,
+        ),
+        AttendanceRecord(
+            school_id=school.id, session_id=today.id, student_id=learner.id,
+            status="late", note="Arrived after assembly", marked_by_user_id=owner.id,
+        ),
+        AttendanceRecord(
+            school_id=school.id, session_id=draft.id, student_id=learner.id,
+            status="absent", marked_by_user_id=owner.id,
+        ),
+    ])
+    db_session.commit()
+
+    parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9101, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+    def verified_child(_principal, student_id, _db):
+        from fastapi import HTTPException
+        if student_id != learner.id:
+            raise HTTPException(status_code=404, detail="Linked student not found")
+        return learner
+    monkeypatch.setattr(portal, "_parent_student", verified_child)
+
+    response = client.get(f"/portal/parent/children/{learner.id}/attendance")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summary"] == {
+        "total_recorded_days": 2, "present": 1, "absent": 0,
+        "late": 1, "excused": 0, "attendance_rate": 100.0,
+    }
+    assert [row["status"] for row in data["records"]] == ["late", "present"]
+    assert data["records"][0]["note"] == "Arrived after assembly"
+
+    filtered = client.get(
+        f"/portal/parent/children/{learner.id}/attendance",
+        params={"from_date": "2026-11-05", "to_date": "2026-11-05"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["summary"]["total_recorded_days"] == 1
+
+
+def test_parent_attendance_rejects_unlinked_child_and_invalid_date_range(client, db_session, seed_two_schools, monkeypatch):
+    from datetime import date
+    from fastapi import HTTPException
+    from app.models.attendance import AttendanceSession, AttendanceRecord
+
+    school = seed_two_schools["s1"]
+    owner = seed_two_schools["u1"]
+    learner = Student(
+        school_id=school.id, student_number="ATT-P-002",
+        first_name="Tariro", last_name="Moyo", status="active",
+    )
+    db_session.add(learner)
+    db_session.flush()
+    session = AttendanceSession(
+        school_id=school.id, class_name="Form 1", attendance_date=date(2026, 11, 5),
+        status="submitted", recorded_by_user_id=owner.id,
+    )
+    db_session.add(session)
+    db_session.flush()
+    db_session.add(AttendanceRecord(
+        school_id=school.id, session_id=session.id, student_id=learner.id,
+        status="absent", marked_by_user_id=owner.id,
+    ))
+    db_session.commit()
+
+    parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9102, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+    def verified_child(_principal, student_id, _db):
+        if student_id != learner.id:
+            raise HTTPException(status_code=404, detail="Linked student not found")
+        return learner
+    monkeypatch.setattr(portal, "_parent_student", verified_child)
+
+    invalid = client.get(
+        f"/portal/parent/children/{learner.id}/attendance",
+        params={"from_date": "2026-11-06", "to_date": "2026-11-05"},
+    )
+    assert invalid.status_code == 422
+    unlinked = client.get("/portal/parent/children/999999/attendance")
+    assert unlinked.status_code == 404
