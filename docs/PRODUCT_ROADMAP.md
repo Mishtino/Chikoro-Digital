@@ -28,6 +28,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Parent workspace
 - One account can link to multiple verified learners.
+- Attendance history and summaries now have a backend endpoint and parent dashboard view. Only submitted registers for active, verified linked learners are returned; date filters are supported and the summary counts the full matching history while the visible register is capped at the latest 100 records.
 - Per-child overview with clear learner switching.
 - Attendance and absence alerts.
 - Results, report cards and teacher feedback.
@@ -36,6 +37,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 - Guardian relationships require verified email and school-issued, one-time activation credentials.
 
 ### Portal release gates
+- Parent attendance visibility is implemented on the feature branch and must pass API/UI CI plus staging tenant-isolation tests before release.
 - Never expose another learner's data by changing a URL or request identifier.
 - Parent access is derived only from active, verified guardian links.
 - Student access is restricted to the authenticated student's own record.
