@@ -210,7 +210,7 @@ def issue_student_activation_pin(
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
     student.activation_pin_hash = hash_pin(pin)
     student.activation_expires_at = expires_at
-    db.commit()
+    db.flush()
     write_audit(db, principal, "student.activation.pin.issue", "student", student.id, {"expires_at": expires_at.isoformat()}, school_id=sid)
     return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
@@ -232,7 +232,7 @@ def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: S
     pin = generate_pin(8)
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
     db.execute(text("UPDATE public.contacts SET guardian_activation_pin_hash=:pin_hash, guardian_activation_expires_at=:expires_at WHERE id=:id AND student_id=:student_id AND school_id=:school_id"), {"pin_hash": hash_pin(pin), "expires_at": expires_at, "id": contact_id, "student_id": student_id, "school_id": sid})
-    db.commit()
+    db.flush()
     write_audit(db, principal, "guardian.activation.pin.issue", "guardian_contact", contact_id, {"expires_at": expires_at.isoformat()}, school_id=sid)
     return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
@@ -314,9 +314,8 @@ def update_student_profile(
             setattr(student, field, new_value)
 
     if changes:
-        db.commit()
-        db.refresh(student)
-        write_audit(
+        db.flush()
+        db.refresh(student)$3(
             db,
             principal,
             "student.profile_update",
