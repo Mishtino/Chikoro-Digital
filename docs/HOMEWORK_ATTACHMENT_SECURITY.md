@@ -36,4 +36,4 @@
 - Add a cleanup job for abandoned pending uploads only after retention and audit requirements are agreed.
 
 ## Release status
-This is a feature-branch implementation. The proposed migration is unapplied. Do not deploy the attachment endpoints or enable the feature until staging validation is complete.
+The API feature flag `HOMEWORK_ATTACHMENTS_ENABLED` defaults to `false`. Keep it disabled in production. This is a feature-branch implementation and the proposed migration is unapplied. Do not enable the flag or deploy attachment endpoints until staging validation and malware-scanning controls are complete.
