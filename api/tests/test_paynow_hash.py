@@ -26,9 +26,7 @@ from app.services.paynow import _validate_poll_url
 
 
 @pytest.mark.parametrize("url", [
-    "https://paynow.co.zw/interface/checkpayment/?guid=abc",
     "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
-    "https://secure.paynow.co.zw/interface/checkpayment/?guid=abc",
 ])
 def test_poll_url_accepts_https_paynow_hosts(url):
     assert _validate_poll_url(url) == url
@@ -36,6 +34,9 @@ def test_poll_url_accepts_https_paynow_hosts(url):
 
 @pytest.mark.parametrize("url", [
     "http://paynow.co.zw/poll",
+    "https://paynow.co.zw/poll",
+    "https://secure.paynow.co.zw/poll",
+    "https://www.paynow.co.zw:7106/poll",
     "https://paynow.co.zw.evil.example/poll",
     "https://evil-paynow.co.zw/poll",
     "https://127.0.0.1/poll",
@@ -68,9 +69,7 @@ def test_paid_confirmation_must_match_local_reference_and_amount():
     )
 
 @pytest.mark.parametrize("url", [
-    "https://paynow.co.zw/Payment/123",
     "https://www.paynow.co.zw/Payment/123",
-    "https://secure.paynow.co.zw/Payment/123",
 ])
 def test_browser_url_accepts_known_paynow_hosts(url):
     from app.services.paynow import _validate_browser_url
@@ -124,3 +123,46 @@ def test_paynow_amount_formatting_rejects_invalid_precision_or_value(amount):
 
     with pytest.raises(ValueError):
         _format_amount(amount)
+
+
+def test_polling_uses_post_and_disables_redirects(monkeypatch):
+    from app.services import paynow as paynow_service
+
+    calls = {}
+
+    class FakeResponse:
+        text = "Status=Paid&reference=PN-POST&amount=5.00"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout, follow_redirects):
+            calls["timeout"] = timeout
+            calls["follow_redirects"] = follow_redirects
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, url):
+            calls["method"] = "POST"
+            calls["url"] = url
+            return FakeResponse()
+
+        def get(self, _url):
+            raise AssertionError("Paynow polling must use POST, not GET")
+
+    monkeypatch.setattr(paynow_service.httpx, "Client", FakeClient)
+    result = paynow_service.poll_transaction(
+        "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
+        "test-key",
+    )
+
+    assert calls["method"] == "POST"
+    assert calls["follow_redirects"] is False
+    assert calls["url"].startswith("https://www.paynow.co.zw/")
+    assert result["Status"] == "Paid"
