@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from sqlalchemy import text
 
 from app.database import get_db
@@ -246,22 +247,41 @@ def parent_child_attendance(
     if to_date:
         query = query.filter(AttendanceSession.attendance_date <= to_date)
 
+    grouped_counts = db.query(
+        AttendanceRecord.status, func.count(AttendanceRecord.id)
+    ).join(
+        AttendanceSession,
+        (AttendanceSession.id == AttendanceRecord.session_id)
+        & (AttendanceSession.school_id == AttendanceRecord.school_id),
+    ).filter(
+        AttendanceRecord.school_id == student.school_id,
+        AttendanceRecord.student_id == student.id,
+        AttendanceSession.school_id == student.school_id,
+        AttendanceSession.status == "submitted",
+    )
+    if from_date:
+        grouped_counts = grouped_counts.filter(AttendanceSession.attendance_date >= from_date)
+    if to_date:
+        grouped_counts = grouped_counts.filter(AttendanceSession.attendance_date <= to_date)
+    grouped_counts = grouped_counts.group_by(AttendanceRecord.status).all()
+    counts = {"present": 0, "absent": 0, "late": 0, "excused": 0}
+    for state, count in grouped_counts:
+        if state in counts:
+            counts[state] = count
+    total = sum(counts.values())
+
     rows = query.order_by(
         AttendanceSession.attendance_date.desc(),
         AttendanceSession.id.desc(),
     ).limit(100).all()
-    counts = {"present": 0, "absent": 0, "late": 0, "excused": 0}
     records = []
     for record, session in rows:
-        if record.status in counts:
-            counts[record.status] += 1
         records.append({
             "date": session.attendance_date.isoformat(),
             "class_name": session.class_name,
             "status": record.status,
             "note": record.note,
         })
-    total = len(records)
     return {
         "student_id": student.id,
         "student_number": student.student_number,
@@ -277,7 +297,7 @@ def parent_child_attendance(
             ) if total else None,
         },
         "records": records,
-        "records_limited": total == 100,
+        "records_limited": total > len(records),
     }
 
 @router.post("/register", status_code=status.HTTP_410_GONE)
