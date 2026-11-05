@@ -180,3 +180,14 @@ def test_mark_review_is_school_scoped_and_teacher_sees_only_own_entries(
     owner_response = client.get("/results/marks")
     assert owner_response.status_code == 200
     assert len(owner_response.json()) == 2
+
+
+def test_platform_admin_cannot_use_school_mark_review_endpoint(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=admin.id,
+        school_id=None, role="vortex_admin", is_admin=True,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/results/marks", params={"school_id": seed_two_schools["s1"].id})
+    assert response.status_code == 403
