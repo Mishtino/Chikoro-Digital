@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Numeric, Boolean, Date, UniqueConstraint
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Numeric, Boolean, Date, UniqueConstraint, ForeignKeyConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -28,6 +28,7 @@ class Invoice(Base):
 
     __table_args__ = (
         UniqueConstraint("school_id", "invoice_number", name="uq_invoice_number_per_school"),
+        UniqueConstraint("school_id", "id", name="uq_invoice_school_id_id"),
         UniqueConstraint("school_id", "student_id", "term_id", name="uq_invoice_student_term_per_school"),
     )
 
@@ -58,7 +59,10 @@ class Payment(Base):
     voided_at = Column(DateTime(timezone=True), nullable=True)
     void_reason = Column(String(255), nullable=True)
 
-    __table_args__ = (UniqueConstraint("school_id", "reference", name="uq_payment_reference_per_school"),)
+    __table_args__ = (
+        UniqueConstraint("school_id", "reference", name="uq_payment_reference_per_school"),
+        UniqueConstraint("school_id", "id", name="uq_payment_school_id_id"),
+    )
 
 
 class PaymentAllocation(Base):
@@ -70,7 +74,11 @@ class PaymentAllocation(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, index=True)
     amount = Column(Numeric(12, 2), nullable=False)
 
-    __table_args__ = (UniqueConstraint("payment_id", "invoice_id", name="uq_payment_allocation_per_invoice"),)
+    __table_args__ = (
+        UniqueConstraint("payment_id", "invoice_id", name="uq_payment_allocation_per_invoice"),
+        ForeignKeyConstraint(["school_id", "payment_id"], ["payments.school_id", "payments.id"], name="fk_payment_allocation_payment_school"),
+        ForeignKeyConstraint(["school_id", "invoice_id"], ["invoices.school_id", "invoices.id"], name="fk_payment_allocation_invoice_school"),
+    )
 
 
 class Receipt(Base):
