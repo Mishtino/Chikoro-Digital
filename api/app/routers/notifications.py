@@ -35,18 +35,9 @@ def list_notifications(school_id: Optional[int] = Query(None), status_filter: Op
 def process_notifications(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     if not principal.is_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
-    queued_query = db.query(Notification).filter(Notification.status == "queued")
-    if not principal.is_admin:
-        if principal.school_id is None:
-            raise HTTPException(status_code=403, detail="School context required")
-        queued_query = queued_query.filter(Notification.school_id == principal.school_id)
-    queued = queued_query.order_by(Notification.id.asc()).all()
-    sent = 0
-    for n in queued:
-        # placeholder: actual delivery by channel would happen here
-        n.status = "sent"
-        n.sent_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(tzinfo=None)
-        n.attempts += 1
-        sent += 1
-    db.commit()
-    return {"processed": sent}
+    # Do not mark queued records as sent until a real email/SMS/push provider
+    # is configured and delivery outcomes can be recorded truthfully.
+    raise HTTPException(
+        status_code=501,
+        detail="Notification delivery is not configured. Queued notifications were not marked as sent.",
+    )
