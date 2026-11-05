@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, get_supabase_principal
@@ -10,9 +11,8 @@ from app.models.school import School
 from app.models.student import Student
 from app.models.user import User
 from app.models.fee import Term
-from app.models.payment import Invoice
+from app.models.payment import Invoice, Payment, PaymentAllocation
 from app.models.results import Subject, Assessment, Mark
-from app.services.money import invoice_balance
 
 router = APIRouter(prefix="/school-admin", tags=["school-admin"])
 
@@ -53,16 +53,45 @@ def school_admin_overview(
         Term.school_id == school_id, Term.is_current.is_(True)
     ).order_by(Term.id.desc()).first()
 
-    invoices = db.query(Invoice).filter(
-        Invoice.school_id == school_id, Invoice.status != "void"
-    ).all()
-    open_invoices = 0
+    # Aggregate outstanding balances in one tenant-scoped query instead of
+    # issuing one allocation query per invoice on larger school accounts.
+    paid_by_invoice = (
+        db.query(
+            PaymentAllocation.invoice_id.label("invoice_id"),
+            func.sum(PaymentAllocation.amount).label("paid"),
+        )
+        .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .join(Invoice, Invoice.id == PaymentAllocation.invoice_id)
+        .filter(
+            PaymentAllocation.school_id == school_id,
+            Payment.school_id == school_id,
+            Payment.voided.is_(False),
+            Payment.currency == Invoice.currency,
+            Invoice.school_id == school_id,
+            Invoice.student_id == Payment.student_id,
+        )
+        .group_by(PaymentAllocation.invoice_id)
+        .subquery()
+    )
+    open_balance_rows = (
+        db.query(
+            Invoice.currency,
+            func.count(Invoice.id),
+            func.sum(Invoice.total - func.coalesce(paid_by_invoice.c.paid, 0)),
+        )
+        .outerjoin(paid_by_invoice, paid_by_invoice.c.invoice_id == Invoice.id)
+        .filter(
+            Invoice.school_id == school_id,
+            Invoice.status != "void",
+            Invoice.total > func.coalesce(paid_by_invoice.c.paid, 0),
+        )
+        .group_by(Invoice.currency)
+        .all()
+    )
+    open_invoices = sum(int(row[1]) for row in open_balance_rows)
     outstanding = defaultdict(lambda: Decimal("0"))
-    for invoice in invoices:
-        balance = invoice_balance(db, invoice)
-        if balance > 0:
-            open_invoices += 1
-            outstanding[invoice.currency] += balance
+    for currency, _count, amount in open_balance_rows:
+        outstanding[currency] += Decimal(str(amount or 0))
 
     mark_counts = {
         state: db.query(Mark).filter(
