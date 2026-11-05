@@ -96,10 +96,14 @@ export default function StudentHomeworkPortal() {
   }
 
   async function downloadAttachment(attachmentId) {
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
     try {
       const result = await api('/homework/attachments/' + attachmentId + '/download-url', { method: 'POST' });
-      window.open(result.download_url, '_blank', 'noopener,noreferrer');
+      if (popup) popup.location.href = result.download_url;
+      else window.location.href = result.download_url;
     } catch (e) {
+      if (popup) popup.close();
       setError(e.message || 'The attachment could not be opened.');
     }
   }
