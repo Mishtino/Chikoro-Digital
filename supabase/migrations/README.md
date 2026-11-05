@@ -27,3 +27,6 @@ shortcut around the migration review.
 
 See `docs/SUPABASE_MIGRATION_RECONCILIATION.md` for the recovery record,
 schema differences, and release checklist.
+
+
+The proposed parent/teacher messaging migration (`20261105_add_parent_teacher_messaging.sql`) is also staging-only. It creates school-scoped conversations and messages, composite tenant foreign keys, RLS with no browser-facing policies, and no direct grants to `anon` or `authenticated`. Apply it only after the verified guardian, class assignment, and supporting composite-key migrations have been reviewed and validated together. Messaging APIs must not be released before this schema is present in the target environment.
