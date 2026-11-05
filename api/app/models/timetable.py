@@ -31,7 +31,7 @@ class TimetableEntry(Base):
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("school_id", "class_name", "day_of_week", "period_number", name="uq_timetable_class_day_period"),
+        UniqueConstraint("school_id", "term_id", "class_name", "day_of_week", "period_number", name="uq_timetable_class_day_period"),
         ForeignKeyConstraint(["school_id", "term_id"], ["terms.school_id", "terms.id"], name="fk_timetable_school_term"),
         ForeignKeyConstraint(["school_id", "subject_id"], ["subjects.school_id", "subjects.id"], name="fk_timetable_school_subject"),
         ForeignKeyConstraint(["school_id", "teacher_user_id"], ["users.school_id", "users.id"], name="fk_timetable_school_teacher"),
