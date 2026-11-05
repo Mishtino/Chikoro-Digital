@@ -274,3 +274,51 @@ def test_class_performance_analytics_only_uses_published_marks_and_respects_teac
     all_classes = client.get("/results/analytics/class-performance", params={"term_id": term.id})
     assert all_classes.status_code == 200
     assert {row["class_name"] for row in all_classes.json()["results"]} == {"Form 1", "Form 2"}
+
+
+def test_report_card_is_restricted_to_assigned_teacher_classes(client, db_session, seed_two_schools):
+    from app.models.student import Student
+    from app.models.results import Mark
+    from app.models.class_assignment import ClassTeacherAssignment
+
+    school = seed_two_schools["s1"]
+    teacher_user = seed_two_schools["u1"]
+    student = Student(
+        school_id=school.id, student_number="RC-002", first_name="Nyasha",
+        last_name="Dube", form="Form 2", status="active",
+    )
+    subject = Subject(school_id=school.id, name="English", code="RC-ENG")
+    db_session.add_all([student, subject])
+    db_session.flush()
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id, name="Final",
+        weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add(Mark(
+        school_id=school.id, student_id=student.id, assessment_id=assessment.id,
+        score=88, status="published", entered_by_user_id=teacher_user.id,
+    ))
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 1", teacher_user_id=teacher_user.id,
+        assigned_by_user_id=teacher_user.id, is_active=True,
+    ))
+    db_session.commit()
+
+    teacher = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="teacher", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: teacher
+    denied = client.get(f"/results/report-card/{student.id}")
+    assert denied.status_code == 403
+
+    owner = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: owner
+    allowed = client.get(f"/results/report-card/{student.id}")
+    assert allowed.status_code == 200
+    assert allowed.json()["subjects"][0]["average"] == 88
