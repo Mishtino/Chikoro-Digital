@@ -1,7 +1,7 @@
 # Supabase migration reconciliation
 
 **Project:** Chikoro Digital  
-**Audit date:** 4 November 2026  
+**Audit dates:** 4–5 November 2026  
 **Mode:** Read-only inspection; no migration or DDL was executed.
 
 ## Executive finding
@@ -25,7 +25,7 @@ The connected project reports these applied versions:
 - `20261104082933` — `add_verified_guardian_link_foundation`
 - `20261104083032` — `add_guardian_activation_fields`
 
-These are not the same migration versions or names as the three repository files. The exact SQL statements for all four live ledger entries were recovered from the `statements` array in the live migration ledger and restored to the repository with their original versions and names.
+The four canonical files now restored under `supabase/migrations/` match these version/name pairs. The three older local drafts were different and remain quarantined. The exact SQL statements were recovered from the `statements` array in the live migration ledger.
 
 ## Live schema observations
 
@@ -42,9 +42,9 @@ The live table currently has:
 
 It currently has no role CHECK constraint. RLS is enabled but not forced. One SELECT policy exists for authenticated users, restricted to `auth.uid() = id`. The `authenticated` role has SELECT privilege on this table. The inspected public tables have RLS enabled; no public-table policies were found except this own-profile SELECT policy. The inspected `anon` and `authenticated` roles had no other table grants in the audited public schema.
 
-### Differences from repository migration 001
+### Differences from the quarantined legacy draft
 
-The repository file `202611040001_profiles_identity_bridge.sql` uses `ON DELETE RESTRICT` for local-user and school foreign keys, while live uses `ON DELETE SET NULL`. It also specifies FORCE RLS and revokes all table privileges from `anon` and `authenticated`, whereas live currently allows authenticated own-profile SELECT.
+The quarantined file `supabase/proposed_migrations/legacy_202611040001_profiles_identity_bridge.sql` uses `ON DELETE RESTRICT` for local-user and school foreign keys, while live uses `ON DELETE SET NULL`. It also specifies FORCE RLS and revokes all table privileges from `anon` and `authenticated`, whereas live currently allows authenticated own-profile SELECT.
 
 Because `CREATE TABLE IF NOT EXISTS` does not reconcile an existing table's column definitions or foreign keys, applying this file to the live table would not make those definitions match. Its later ALTER/REVOKE statements would nevertheless change RLS and privileges and could remove a working profile-read path. Do not apply it as a schema repair.
 
@@ -66,7 +66,7 @@ Do not infer that the unlinked profile belongs to the unscoped admin. The platfo
 
 ## Payment schema status
 
-The read-only financial audit found zero rows in payments, payment allocations, receipts, invoices, and Paynow attempts. No duplicate Paynow references, duplicate payment/invoice allocation pairs, duplicate receipt numbers, cross-school allocations, or cross-student allocations were found. The live unique constraint on `(school_id, receipt_number)` exists. Database-level uniqueness for `payments.reference` and `(payment_id, invoice_id)` is still absent and should be introduced only through a separately reviewed forward migration.
+The read-only financial audit found zero rows in payments, payment allocations, receipts, invoices, and Paynow attempts. No duplicate Paynow references, duplicate payment/invoice allocation pairs, duplicate receipt numbers, cross-school allocations, or cross-student allocations were found. The live unique constraint on `(school_id, receipt_number)` exists. Database-level uniqueness for `(school_id, reference)` on payments and `(payment_id, invoice_id)` on allocations is still absent in the live database. The SQLAlchemy models now declare the intended constraints, and a separately reviewed staging migration proposal has been prepared; production enforcement remains pending.
 
 ## Operational guardrails
 
@@ -101,7 +101,7 @@ It adds and validates only the `profiles_role_check` constraint. It does not rec
 
 ## Migration quarantine safeguard — 5 November 2026
 
-The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. This prevents a routine Supabase CLI migration push from treating those unreconciled drafts as pending production migrations. `supabase/migrations/README.md` explicitly blocks pushes until the original four live SQL definitions are recovered. The proposed role allow-list SQL remains outside the standard migration path. This repository recovery does not alter the live Supabase migration ledger or database.
+The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. The exact four applied SQL definitions have been restored to the canonical migration directory. The proposed role allow-list and financial uniqueness SQL remain outside the standard migration path pending staging review. This repository recovery does not alter the live Supabase migration ledger or database.
 
 
 ## Financial uniqueness proposal — 5 November 2026
