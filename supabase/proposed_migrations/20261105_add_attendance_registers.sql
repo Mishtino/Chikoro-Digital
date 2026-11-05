@@ -75,6 +75,7 @@ CREATE INDEX IF NOT EXISTS ix_attendance_records_session_id
 
 ALTER TABLE public.attendance_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
+REVOKE ALL PRIVILEGES ON TABLE public.attendance_sessions, public.attendance_records FROM anon, authenticated;
 
 -- No browser-facing policies are added. Browser roles remain denied by
 -- default; the API's database role and tenant checks remain the current
