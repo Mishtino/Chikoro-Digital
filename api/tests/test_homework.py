@@ -121,3 +121,122 @@ def test_homework_assignment_is_school_scoped(client, db_session, seed_two_schoo
         "title": "Lab report", "instructions": "Describe the experiment.",
     })
     assert response.status_code == 201
+
+
+def test_homework_private_attachment_upload_completion_and_download(
+    client, db_session, seed_two_schools, monkeypatch
+):
+    from app.routers import homework as homework_router
+
+    school = seed_two_schools["s1"]
+    teacher = User(
+        email="attachment.teacher@example.com", full_name="Attachment Teacher",
+        password_hash=hash_password("test-password"), role="teacher",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    learner_user = User(
+        email="attachment.student@example.com", full_name="Attachment Learner",
+        password_hash=hash_password("test-password"), role="student",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    student = Student(
+        school_id=school.id, student_number="ATT-001", first_name="Tariro",
+        last_name="Moyo", form="Form 1", status="active",
+    )
+    subject = Subject(school_id=school.id, name="English", code="ATT-ENG")
+    db_session.add_all([teacher, learner_user, student, subject])
+    db_session.flush()
+    student.portal_user_id = learner_user.id
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 1", teacher_user_id=teacher.id,
+        assigned_by_user_id=seed_two_schools["u1"].id, is_active=True,
+    ))
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(teacher, school)
+    created = client.post("/homework/assignments", json={
+        "class_name": "Form 1", "subject_id": subject.id,
+        "title": "Essay upload", "instructions": "Write and upload an essay.",
+        "publish": True,
+    })
+    assert created.status_code == 201
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(learner_user, school)
+    submitted = client.post(
+        f"/homework/student/assignments/{created.json()['id']}/submit",
+        json={"answer_text": "Please see my attached essay."},
+    )
+    assert submitted.status_code == 201
+    submission_id = submitted.json()["id"]
+
+    monkeypatch.setattr(homework_router, "create_upload_url", lambda path: "https://storage.example/upload-token")
+    upload = client.post(
+        f"/homework/student/submissions/{submission_id}/attachments/upload-url",
+        json={
+            "filename": "../../my-essay.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+    )
+    assert upload.status_code == 201
+    assert upload.json()["upload_url"] == "https://storage.example/upload-token"
+    assert upload.json()["attachment"]["filename"] == "my-essay.pdf"
+    attachment_id = upload.json()["attachment"]["id"]
+
+    monkeypatch.setattr(
+        homework_router, "inspect_object",
+        lambda path: {"size_bytes": 4096, "content_type": "application/pdf"},
+    )
+    completed = client.post(f"/homework/student/attachments/{attachment_id}/complete")
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "ready"
+
+    listed = client.get(f"/homework/submissions/{submission_id}/attachments")
+    assert listed.status_code == 200
+    assert len(listed.json()["attachments"]) == 1
+
+    monkeypatch.setattr(
+        homework_router, "create_download_url",
+        lambda path, expires_in=300: "https://storage.example/download-token",
+    )
+    downloaded = client.post(f"/homework/attachments/{attachment_id}/download-url")
+    assert downloaded.status_code == 200
+    assert downloaded.json()["download_url"] == "https://storage.example/download-token"
+    assert downloaded.json()["expires_in_seconds"] == 300
+
+
+def test_homework_attachment_rejects_disallowed_type(client, db_session, seed_two_schools):
+    school = seed_two_schools["s1"]
+    learner_user = User(
+        email="attachment.badtype@example.com", full_name="Learner",
+        password_hash=hash_password("test-password"), role="student",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    student = Student(
+        school_id=school.id, student_number="ATT-002", first_name="Tariro",
+        last_name="Moyo", form="Form 1", status="active", portal_user_id=None,
+    )
+    db_session.add_all([learner_user, student])
+    db_session.flush()
+    student.portal_user_id = learner_user.id
+    assignment = HomeworkAssignment(
+        school_id=school.id, class_name="Form 1", subject_id=seed_two_schools["subject"].id,
+        title="Allowed upload", instructions="Upload a PDF.", status="published",
+        created_by_user_id=seed_two_schools["u1"].id,
+    )
+    db_session.add(assignment)
+    db_session.flush()
+    from app.models.homework import HomeworkSubmission
+    submission = HomeworkSubmission(
+        school_id=school.id, assignment_id=assignment.id, student_id=student.id,
+        answer_text="My answer",
+    )
+    db_session.add(submission)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(learner_user, school)
+    response = client.post(
+        f"/homework/student/submissions/{submission.id}/attachments/upload-url",
+        json={"filename": "script.exe", "content_type": "application/octet-stream", "size_bytes": 100},
+    )
+    assert response.status_code == 415
