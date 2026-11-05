@@ -127,6 +127,7 @@ def test_homework_private_attachment_upload_completion_and_download(
     client, db_session, seed_two_schools, monkeypatch
 ):
     from app.routers import homework as homework_router
+    monkeypatch.setattr(homework_router.settings, "homework_attachments_enabled", True)
 
     school = seed_two_schools["s1"]
     teacher = User(
@@ -242,7 +243,9 @@ def test_homework_private_attachment_upload_completion_and_download(
     assert denied_download.status_code == 404
 
 
-def test_homework_attachment_rejects_disallowed_type(client, db_session, seed_two_schools):
+def test_homework_attachment_rejects_disallowed_type(client, db_session, seed_two_schools, monkeypatch):
+    from app.routers import homework as homework_router
+    monkeypatch.setattr(homework_router.settings, "homework_attachments_enabled", True)
     school = seed_two_schools["s1"]
     learner_user = User(
         email="attachment.badtype@example.com", full_name="Learner",
