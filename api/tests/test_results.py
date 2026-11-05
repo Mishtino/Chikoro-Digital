@@ -339,12 +339,16 @@ def test_report_card_pdf_is_downloadable_and_contains_only_published_results(cli
         school_id=school.id, subject_id=subject.id, name="Final",
         weight=1, max_score=100,
     )
-    db_session.add(assessment)
+    draft_assessment = Assessment(
+        school_id=school.id, subject_id=subject.id, name="Practice",
+        weight=1, max_score=100,
+    )
+    db_session.add_all([assessment, draft_assessment])
     db_session.flush()
     db_session.add_all([
         Mark(school_id=school.id, student_id=student.id, assessment_id=assessment.id,
              score=85, status="published"),
-        Mark(school_id=school.id, student_id=student.id, assessment_id=assessment.id,
+        Mark(school_id=school.id, student_id=student.id, assessment_id=draft_assessment.id,
              score=20, status="draft"),
     ])
     db_session.commit()
