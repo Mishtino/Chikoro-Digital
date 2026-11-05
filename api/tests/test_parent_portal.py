@@ -339,6 +339,9 @@ def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_se
     response = client.get(f"/portal/parent/children/{learner.id}/report-card.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "private, no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
     assert response.content.startswith(b"%PDF")
     denied = client.get("/portal/parent/children/999999/report-card.pdf")
     assert denied.status_code == 404
