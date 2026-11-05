@@ -215,3 +215,52 @@ def test_payment_cannot_allocate_twice_to_same_invoice(db_session):
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
+
+
+def test_manual_payment_returns_conflict_for_duplicate_school_reference(
+    client, db_session
+):
+    school = School(code="PAY007", name="Duplicate Reference API")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-REF-API",
+        first_name="Reference", last_name="API", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoices = [
+        Invoice(
+            school_id=school.id, student_id=student.id,
+            invoice_number=f"PAY-REF-API-{index}", currency="USD",
+            total=20, status="issued",
+        )
+        for index in (1, 2)
+    ]
+    db_session.add_all(invoices)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    first = client.post(
+        "/payments",
+        json={
+            "student_id": student.id, "amount": 5, "currency": "USD",
+            "method": "bank", "reference": " BANK-API-REF ",
+            "invoice_ids": [invoices[0].id],
+        },
+    )
+    duplicate = client.post(
+        "/payments",
+        json={
+            "student_id": student.id, "amount": 5, "currency": "USD",
+            "method": "bank", "reference": "BANK-API-REF",
+            "invoice_ids": [invoices[1].id],
+        },
+    )
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "Payment reference already exists for this school"
+    payments = db_session.query(Payment).filter(Payment.school_id == school.id).all()
+    assert len(payments) == 1
+    assert payments[0].reference == "BANK-API-REF"
