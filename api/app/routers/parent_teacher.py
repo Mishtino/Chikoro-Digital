@@ -190,7 +190,8 @@ def create_conversation(
         )
         db.add(conversation)
         db.flush()
-        db.refresh(conversation)$3(db, principal, "communication.conversation.create",
+        db.refresh(conversation)
+    write_audit(db, principal, "communication.conversation.create",
                     "parent_teacher_conversation", conversation.id,
                     {"student_id": student.id, "teacher_user_id": teacher.id},
                     school_id=school_id)
@@ -282,7 +283,8 @@ def send_message(
     db.add(message)
     conversation.updated_at = datetime.utcnow()
     db.flush()
-    db.refresh(message)$3(db, principal, "communication.message.send",
+    db.refresh(message)
+    write_audit(db, principal, "communication.message.send",
                 "parent_teacher_conversation", conversation.id,
                 {"message_id": message.id, "body_length": len(payload.body)},
                 school_id=conversation.school_id)
