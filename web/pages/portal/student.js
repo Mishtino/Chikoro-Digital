@@ -11,6 +11,7 @@ export default function StudentHomeworkPortal() {
   const [savingId, setSavingId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [uploadingId, setUploadingId] = useState('');
 
   async function loadAssignments() {
     const data = await api('/homework/student/assignments');
@@ -65,6 +66,43 @@ export default function StudentHomeworkPortal() {
     }
   }
 
+
+  async function uploadAttachment(event, item) {
+    event.preventDefault();
+    const file = event.currentTarget.elements.namedItem('attachment')?.files?.[0];
+    if (!file || !item.submission_id || uploadingId) return;
+    setUploadingId(String(item.id)); setError(''); setNotice('');
+    try {
+      const signed = await api('/homework/student/submissions/' + item.submission_id + '/attachments/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, content_type: file.type, size_bytes: file.size }),
+      });
+      const uploaded = await fetch(signed.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!uploaded.ok) throw new Error('The file could not be uploaded to secure storage.');
+      await api('/homework/student/attachments/' + signed.attachment.id + '/complete', { method: 'POST' });
+      await loadAssignments();
+      setNotice('Your attachment was uploaded securely.');
+      event.currentTarget.reset();
+    } catch (e) {
+      setError(e.message || 'The attachment could not be uploaded.');
+    } finally {
+      setUploadingId('');
+    }
+  }
+
+  async function downloadAttachment(attachmentId) {
+    try {
+      const result = await api('/homework/attachments/' + attachmentId + '/download-url', { method: 'POST' });
+      window.open(result.download_url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setError(e.message || 'The attachment could not be opened.');
+    }
+  }
+
   async function logout() {
     await getSupabaseBrowserClient().auth.signOut();
     router.replace('/portal/login');
@@ -94,6 +132,12 @@ export default function StudentHomeworkPortal() {
           <p style={{ margin: 0 }}>Submission received{item.submitted_at ? ' · ' + new Date(item.submitted_at).toLocaleString() : ''}.</p>
           {item.score !== null && item.score !== undefined && <p><strong>Score:</strong> {item.score}</p>}
           {item.feedback && <p><strong>Teacher feedback:</strong> {item.feedback}</p>}
+          {!!item.attachments?.length && <div><strong>Your files</strong><ul>{item.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button></li>)}</ul></div>}
+          <form onSubmit={event => uploadAttachment(event, item)} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+            <input name="attachment" type="file" required accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.txt" />
+            <button type="submit" disabled={uploadingId === String(item.id)}>{uploadingId === String(item.id) ? 'Uploading…' : 'Add attachment'}</button>
+            <small style={{ color: '#64748b' }}>PDF, Office documents, JPG, PNG or TXT · max 10 MB each · up to 5 files</small>
+          </form>
         </div>}
       </article>)}
     </section>
