@@ -9,7 +9,7 @@ The API now adds baseline response headers to every response:
 - Referrer-Policy: strict-origin-when-cross-origin
 - Permissions-Policy: camera=(), microphone=(), geolocation=()
 - Cache-Control: no-store
-- Strict-Transport-Security: max-age=31536000; includeSubDomains only when ENV=production.
+- Strict-Transport-Security: max-age=31536000 only when ENV=production. `includeSubDomains` is deliberately omitted until every subdomain is confirmed HTTPS-capable.
 
 These are defense-in-depth response controls. They do not constitute a WAF, network firewall, bot defense, or rate limiter. CORS is also not a firewall.
 
