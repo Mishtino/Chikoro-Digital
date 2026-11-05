@@ -30,6 +30,30 @@ class StudentActivationRequest(BaseModel):
     pin: str
 
 
+def _activation_failed_attempts(db: Session, action: str, entity_type: str, email_hash: str) -> int:
+    """Serialize per-email activation attempts before checking the rolling limit.
+
+    The transaction-scoped advisory lock also covers emails with no matching
+    contact/student rows, where row-level locks cannot protect the rate limit.
+    """
+    lock_key = f"chikoro:{action}:{email_hash}"
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+        {"lock_key": lock_key},
+    )
+    return db.execute(text("""
+        SELECT count(*) FROM public.audit_logs
+        WHERE action = :action
+          AND entity_type = :entity_type
+          AND entity_id = :email_hash
+          AND created_at > now() - interval '1 hour'
+    """), {
+        "action": action,
+        "entity_type": entity_type,
+        "email_hash": email_hash,
+    }).scalar_one()
+
+
 @router.post("/bootstrap-admin")
 def bootstrap_first_admin(
     setup_token: str = Header(default="", alias="X-Chikoro-Bootstrap-Token"),
@@ -185,13 +209,9 @@ def activate_parent_account(
         raise HTTPException(status_code=403, detail="Verify your email address before activating the parent portal")
 
     email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
-    failed_attempts = db.execute(text("""
-        SELECT count(*) FROM public.audit_logs
-        WHERE action = 'guardian.activation.failed'
-          AND entity_type = 'guardian_email_hash'
-          AND entity_id = :email_hash
-          AND created_at > now() - interval '1 hour'
-    """), {"email_hash": email_hash}).scalar_one()
+    failed_attempts = _activation_failed_attempts(
+        db, "guardian.activation.failed", "guardian_email_hash", email_hash
+    )
     if failed_attempts >= 5:
         raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
 
@@ -303,13 +323,9 @@ def activate_student_account(
         raise HTTPException(status_code=403, detail="Verify your email address before activating the student portal")
 
     email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
-    failed_attempts = db.execute(text("""
-        SELECT count(*) FROM public.audit_logs
-        WHERE action = 'student.activation.failed'
-          AND entity_type = 'student_email_hash'
-          AND entity_id = :email_hash
-          AND created_at > now() - interval '1 hour'
-    """), {"email_hash": email_hash}).scalar_one()
+    failed_attempts = _activation_failed_attempts(
+        db, "student.activation.failed", "student_email_hash", email_hash
+    )
     if failed_attempts >= 5:
         raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
 
