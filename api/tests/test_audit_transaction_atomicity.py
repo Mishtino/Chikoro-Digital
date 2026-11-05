@@ -1,5 +1,4 @@
 """Regression checks: audit insert failure must roll back the domain write."""
-from datetime import time
 from uuid import uuid4
 
 import pytest
