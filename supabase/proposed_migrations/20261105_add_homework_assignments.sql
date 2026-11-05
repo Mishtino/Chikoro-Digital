@@ -130,3 +130,5 @@ CREATE INDEX ix_homework_attachments_school_submission
 
 ALTER TABLE public.homework_attachments ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.homework_attachments FROM anon, authenticated;
+
+COMMIT;
