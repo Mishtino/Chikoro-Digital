@@ -82,3 +82,16 @@ A read-only join found exactly one confirmed Supabase Auth identity matching the
 ## RLS execution-role note
 
 The live role catalog reports `postgres` and `service_role` as non-superuser roles with `BYPASSRLS`; `anon`, `authenticated`, and `authenticator` do not bypass RLS. This is a role capability finding, not confirmation of which database role Render currently uses. Verify the deployed API connection role through secret-safe configuration metadata before release. If it uses a BYPASSRLS role, every API route must enforce authentication, role authorization, and school/learner ownership in application queries; RLS alone is not a tenant boundary for that connection. Keep the browser roles restricted as currently observed.
+
+
+## Proposed forward-only role allow-list
+
+A further read-only check on 5 November 2026 found one live profile, with role `pending`, and zero profiles outside the current application role allow-list. The live `profiles` table still has no CHECK constraint.
+
+A proposed migration is now stored separately at:
+
+`supabase/proposed_migrations/20261105_add_profiles_platform_role_allowlist.sql`
+
+It adds and validates only the `profiles_role_check` constraint. It does not recreate the table, alter foreign keys, change RLS/FORCE RLS, change grants or policies, or promote/link any user. It explicitly aborts if a constraint with that name already exists or if an existing profile role is outside the approved list.
+
+**This is a staging proposal, not an applied migration and not yet in the standard `supabase/migrations` directory.** The four original live migration SQL definitions are still unavailable in the repository, so migration history reconciliation remains incomplete. Run this proposal only against a staging clone after comparing the original migration definitions and verifying the staging schema matches the audited live schema.
