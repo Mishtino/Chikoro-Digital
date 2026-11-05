@@ -455,7 +455,12 @@ def _portal_report_card_pdf(data: dict, term_id: Optional[int] = None):
     safe = re.sub(r"[^A-Za-z0-9_-]", "-", str(data["student_number"]))[:64]
     filename = f"report-card-{safe}" + (f"-term-{term_id}" if term_id else "") + ".pdf"
     return StreamingResponse(buffer, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        })
 
 
 @router.get("/results/pdf")
