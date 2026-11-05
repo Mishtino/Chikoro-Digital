@@ -3,12 +3,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.class_assignment import ClassTeacherAssignment
 from app.models.student import Student
+from app.models.school import School
 from app.models.user import User
 from app.services.audit import write_audit
 
@@ -101,6 +103,8 @@ def assign_class_teacher(
     db: Session = Depends(get_db),
 ):
     sid = _school(principal, None)
+    if db.query(School).filter(School.id == sid).with_for_update().first() is None:
+        raise HTTPException(status_code=404, detail="School not found")
     if db.query(Student.id).filter(
         Student.school_id == sid, Student.form == payload.class_name, Student.status == "active"
     ).first() is None:
@@ -128,7 +132,11 @@ def assign_class_teacher(
             is_active=True,
         )
         db.add(assignment)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This teacher is already assigned to the class")
     db.refresh(assignment)
     write_audit(db, principal, "class.teacher.assign", "class_teacher_assignment", assignment.id, {
         "class_name": payload.class_name, "teacher_user_id": teacher.id,
