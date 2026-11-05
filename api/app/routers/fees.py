@@ -173,6 +173,12 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
 @router.post("/invoices/generate")
 def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    # Serialize invoice generation within a school. This prevents concurrent
+    # requests from allocating the same invoice numbers or issuing duplicate
+    # invoices for the same learner and term.
+    school = db.query(School).filter(School.id == sid).with_for_update().first()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
     term = db.get(Term, payload.term_id)
     if term is None or term.school_id != sid:
         raise HTTPException(status_code=404, detail="Term not found")
