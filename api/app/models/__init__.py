@@ -10,6 +10,7 @@ from app.models.notification import Notification
 from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.timetable import TimetableEntry
 from app.models.class_assignment import ClassTeacherAssignment
+from app.models.parent_teacher_message import ParentTeacherConversation, ParentTeacherMessage
 
 __all__ = [
     "School", "User", "AuditLog", "Student", "Contact", "Term", "FeeItem",
