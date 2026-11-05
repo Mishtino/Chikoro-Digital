@@ -36,6 +36,18 @@ class LocalDatabaseGuardTests(unittest.TestCase):
         ok, _ = validate_database_url("sqlite:///./chikoro.db")
         self.assertFalse(ok)
 
+    def test_rejects_query_parameters_that_could_override_connection_target(self):
+        ok, _ = validate_database_url(
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local?host=db.example.com"
+        )
+        self.assertFalse(ok)
+
+    def test_rejects_url_fragments(self):
+        ok, _ = validate_database_url(
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local#remote"
+        )
+        self.assertFalse(ok)
+
 
 if __name__ == "__main__":
     unittest.main()
