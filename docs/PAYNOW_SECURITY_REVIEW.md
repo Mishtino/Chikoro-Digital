@@ -42,3 +42,19 @@ Before enabling Paynow for production schools, complete a real test-mode checkou
 - [ ] Verify cancelled, disputed, refunded, duplicate, late and out-of-order callbacks do not create or reverse incorrect financial records.
 - [ ] Verify provider outage/timeouts leave the attempt retryable and do not mark an unpaid invoice as paid.
 - [ ] Only then include Paynow API code in the coordinated production release.
+
+
+## Additional callback/reconciliation hardening
+
+A source review found that the webhook and reconciliation paths previously trusted an unsigned callback status as a fallback when the provider poll did not return a status, and reconciliation could accept unsigned Cancelled/Failed results. This could let an unauthenticated callback disrupt a checkout's local status even though it could not create a verified payment.
+
+The API change now:
+- Treats callback form data only as a wake-up signal and never as the source of payment status.
+- Requires every state-changing status to come from a provider poll response with a valid hash and the exact merchant reference for that attempt.
+- Requires the exact amount as well as hash/reference for Paid.
+- Does not overwrite the provider reference from unverified callback fields.
+- Marks unverified provider results for reconciliation rather than accepting unsigned cancellation/failure states.
+- Accepts Cancelled/Failed/Disputed only when the provider poll response is signed and bound to the attempt.
+
+Regression tests cover forged cancellation callbacks, unsigned reconciliation failure, signed pending/cancelled responses and the existing paid-settlement/idempotency flows.
+
