@@ -9,10 +9,11 @@ from app.models.results import Subject, Assessment, Mark
 from app.models.notification import Notification
 from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.timetable import TimetableEntry
+from app.models.class_assignment import ClassTeacherAssignment
 
 __all__ = [
     "School", "User", "AuditLog", "Student", "Contact", "Term", "FeeItem",
     "FeeStructure", "FeeStructureItem", "Invoice", "InvoiceLine", "Payment",
-    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry",
+    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry", "ClassTeacherAssignment",
 ]
 
