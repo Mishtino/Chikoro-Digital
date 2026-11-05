@@ -148,13 +148,13 @@ def create_timetable_entry(
     db.add(entry)
     try:
         db.flush()
-        write_audit(db, principal, "timetable.entry.create", "timetable_entry", entry.id, {
-            "class_name": entry.class_name, "day_of_week": entry.day_of_week,
-            "period_number": entry.period_number, "subject_id": entry.subject_id,
-        }, school_id=sid)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="A timetable period already exists for this class")
+    write_audit(db, principal, "timetable.entry.create", "timetable_entry", entry.id, {
+        "class_name": entry.class_name, "day_of_week": entry.day_of_week,
+        "period_number": entry.period_number, "subject_id": entry.subject_id,
+    }, school_id=sid)
     return {"id": entry.id}
 
 
