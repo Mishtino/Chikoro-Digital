@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.timetable_entries (
     start_time time NOT NULL,
     end_time time NOT NULL,
     room varchar(80) NULL,
-    created_by_user_id integer NOT NULL REFERENCES public.users(id),
+    created_by_user_id integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_timetable_class_day_period
@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS public.timetable_entries (
         FOREIGN KEY (school_id, subject_id) REFERENCES public.subjects(school_id, id),
     CONSTRAINT fk_timetable_school_teacher
         FOREIGN KEY (school_id, teacher_user_id) REFERENCES public.users(school_id, id),
+    CONSTRAINT fk_timetable_school_creator
+        FOREIGN KEY (school_id, created_by_user_id) REFERENCES public.users(school_id, id),
     CONSTRAINT ck_timetable_day_of_week CHECK (day_of_week BETWEEN 1 AND 7),
     CONSTRAINT ck_timetable_period_positive CHECK (period_number > 0),
     CONSTRAINT ck_timetable_time_range CHECK (start_time < end_time),
