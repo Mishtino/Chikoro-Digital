@@ -53,6 +53,7 @@ def list_classes(
         Student.school_id == sid,
         Student.form.isnot(None),
         Student.form != "",
+        Student.status == "active",
     ).group_by(Student.form)
     classes = query.order_by(Student.form).all()
     assigned = None
