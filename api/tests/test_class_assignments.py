@@ -142,3 +142,50 @@ def test_teacher_can_enter_marks_only_for_assigned_class(client, db_session, see
         "student_id": other_student.id, "assessment_id": assessment.id, "score": 65,
     }]})
     assert denied.status_code == 403
+
+
+def test_teacher_timetable_visibility_is_limited_to_assigned_classes(client, db_session, seed_two_schools):
+    from datetime import time
+    from app.models.fee import Term
+    from app.models.results import Subject
+    from app.models.timetable import TimetableEntry
+
+    school = seed_two_schools["s1"]
+    owner = seed_two_schools["u1"]
+    teacher = User(
+        email="timetable.teacher@example.com", full_name="Timetable Teacher",
+        password_hash=hash_password("test-password"), role="teacher",
+        school_id=school.id, is_active=True, is_admin=False,
+    )
+    term = Term(school_id=school.id, name="Term 1", academic_year="2027")
+    subject = Subject(school_id=school.id, name="History", code="HIST")
+    db_session.add_all([teacher, term, subject])
+    db_session.flush()
+    db_session.add_all([
+        TimetableEntry(
+            school_id=school.id, term_id=term.id, subject_id=subject.id,
+            class_name="Form 1", day_of_week=1, period_number=1,
+            start_time=time(8, 0), end_time=time(8, 40), created_by_user_id=owner.id,
+        ),
+        TimetableEntry(
+            school_id=school.id, term_id=term.id, subject_id=subject.id,
+            class_name="Form 2", day_of_week=1, period_number=1,
+            start_time=time(8, 0), end_time=time(8, 40), created_by_user_id=owner.id,
+        ),
+    ])
+    learner = Student(
+        school_id=school.id, student_number="TTS-001",
+        first_name="Class", last_name="Learner", form="Form 1", status="active",
+    )
+    db_session.add(learner)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(owner, school)
+    assert client.post("/classes/assignments", json={
+        "class_name": "Form 1", "teacher_user_id": teacher.id,
+    }).status_code == 201
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(teacher, school)
+    response = client.get("/timetable/entries")
+    assert response.status_code == 200
+    assert [row["class_name"] for row in response.json()] == ["Form 1"]
