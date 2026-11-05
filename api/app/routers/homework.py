@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, get_supabase_principal, require_supabase_roles
 from app.models.homework import HomeworkAssignment, HomeworkSubmission, HomeworkAttachment
@@ -312,6 +313,12 @@ def parent_child_assignments(
 
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_SUBMISSION = 5
+
+def _require_attachments_enabled():
+    if not settings.homework_attachments_enabled:
+        raise HTTPException(status_code=404, detail="Attachment feature is not available")
+
+
 ALLOWED_ATTACHMENT_TYPES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -383,6 +390,7 @@ def create_homework_attachment_upload(
     principal: SupabasePrincipal = Depends(get_supabase_principal),
     db: Session = Depends(get_db),
 ):
+    _require_attachments_enabled()
     if principal.role != "student":
         raise HTTPException(status_code=403, detail="Student access required")
     student = _student_portal_student(principal, db)
@@ -446,6 +454,7 @@ def complete_homework_attachment_upload(
     principal: SupabasePrincipal = Depends(get_supabase_principal),
     db: Session = Depends(get_db),
 ):
+    _require_attachments_enabled()
     if principal.role != "student":
         raise HTTPException(status_code=403, detail="Student access required")
     student = _student_portal_student(principal, db)
@@ -483,6 +492,7 @@ def list_homework_attachments(
     principal: SupabasePrincipal = Depends(get_supabase_principal),
     db: Session = Depends(get_db),
 ):
+    _require_attachments_enabled()
     sid = _school_id(principal)
     submission, assignment = _submission_and_assignment(db, sid, submission_id)
     if principal.role == "student":
@@ -511,6 +521,7 @@ def create_homework_attachment_download(
     principal: SupabasePrincipal = Depends(get_supabase_principal),
     db: Session = Depends(get_db),
 ):
+    _require_attachments_enabled()
     sid = _school_id(principal)
     attachment = db.query(HomeworkAttachment).filter(
         HomeworkAttachment.id == attachment_id,
