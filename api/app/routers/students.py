@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text, func
 
 from app.database import get_db
@@ -63,7 +64,10 @@ def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
 @router.post("", response_model=StudentCreateResult, status_code=status.HTTP_201_CREATED)
 def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
     sid = _school_id(principal, payload.school_id)
-    school = db.get(School, sid)
+    # Serialize student-number allocation within a school. The school row lock
+    # remains held until commit, preventing concurrent admissions from reading
+    # the same count and generating the same student number.
+    school = db.query(School).filter(School.id == sid).with_for_update().first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
 
@@ -120,7 +124,13 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         db.flush()
         guardian_contact_id = contact.id
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # The database uniqueness constraint remains the final safeguard if a
+        # concurrent writer bypasses this endpoint's school-row lock.
+        raise HTTPException(status_code=409, detail="Student number or portal account conflicts with an existing record")
     db.refresh(student)
     write_audit(db, principal, "student.create", "student", student.id, {"number": number, "portal_enabled": bool(portal_email)}, school_id=sid)
     return StudentCreateResult(
