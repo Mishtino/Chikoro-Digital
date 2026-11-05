@@ -26,7 +26,7 @@ class TimetableEntry(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     room = Column(String(80), nullable=True)
-    created_by_user_id = Column(Integer, nullable=False
+    created_by_user_id = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
