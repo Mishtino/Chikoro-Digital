@@ -445,3 +445,103 @@ def test_platform_and_legacy_admin_flags_cannot_bypass_school_role_dependencies(
             params={"school_id": seed_two_schools["s1"].id},
         )
         assert response.status_code == 403
+
+
+def test_teacher_cannot_approve_or_publish_marks(client, db_session, seed_two_schools):
+    from app.models.results import Mark
+    from app.models.student import Student
+
+    school = seed_two_schools["s1"]
+    teacher_user = seed_two_schools["u1"]
+    student = Student(
+        school_id=school.id, student_number="WF-SEC-001",
+        first_name="Rudo", last_name="Moyo", form="Form 1", status="active",
+    )
+    subject = Subject(school_id=school.id, name="Workflow Security")
+    db_session.add_all([student, subject])
+    db_session.flush()
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id,
+        name="End of term", weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.flush()
+    mark = Mark(
+        school_id=school.id, student_id=student.id,
+        assessment_id=assessment.id, score=75, status="draft",
+        entered_by_user_id=teacher_user.id,
+    )
+    db_session.add(mark)
+    db_session.commit()
+
+    teacher = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="teacher", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: teacher
+
+    approve = client.post("/results/marks/approve", params={"assessment_id": assessment.id})
+    publish = client.post("/results/marks/publish", params={"assessment_id": assessment.id})
+
+    assert approve.status_code == 403
+    assert publish.status_code == 403
+    db_session.refresh(mark)
+    assert mark.status == "draft"
+    assert mark.published_at is None
+
+
+def test_marks_must_be_approved_before_publication_and_publish_is_one_way(
+    client, db_session, seed_two_schools
+):
+    from app.models.results import Mark
+    from app.models.student import Student
+
+    school = seed_two_schools["s1"]
+    owner_user = seed_two_schools["u1"]
+    student = Student(
+        school_id=school.id, student_number="WF-STATE-001",
+        first_name="Tariro", last_name="Ncube", form="Form 2", status="active",
+    )
+    subject = Subject(school_id=school.id, name="Workflow State")
+    db_session.add_all([student, subject])
+    db_session.flush()
+    assessment = Assessment(
+        school_id=school.id, subject_id=subject.id,
+        name="Final assessment", weight=1, max_score=100,
+    )
+    db_session.add(assessment)
+    db_session.flush()
+    draft = Mark(
+        school_id=school.id, student_id=student.id,
+        assessment_id=assessment.id, score=82, status="draft",
+        entered_by_user_id=owner_user.id,
+    )
+    db_session.add(draft)
+    db_session.commit()
+
+    owner = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=owner_user.id,
+        school_id=school.id, role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: owner
+
+    premature = client.post("/results/marks/publish", params={"assessment_id": assessment.id})
+    assert premature.status_code == 409
+
+    approved = client.post("/results/marks/approve", params={"assessment_id": assessment.id})
+    assert approved.status_code == 200
+    assert approved.json()["approved"] == 1
+    db_session.refresh(draft)
+    assert draft.status == "approved"
+
+    published = client.post("/results/marks/publish", params={"assessment_id": assessment.id})
+    assert published.status_code == 200
+    assert published.json()["published"] == 1
+    db_session.refresh(draft)
+    assert draft.status == "published"
+    assert draft.published_at is not None
+
+    repeated = client.post("/results/marks/publish", params={"assessment_id": assessment.id})
+    assert repeated.status_code == 409
+    db_session.refresh(draft)
+    assert draft.status == "published"
