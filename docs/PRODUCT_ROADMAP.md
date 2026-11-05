@@ -58,6 +58,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Teaching workspace
 - Assigned classes and subjects only.
+- Downloadable report-card PDFs are implemented on the feature branch for authorised school leadership and currently assigned teachers. PDFs are generated server-side from published marks only; learner and school scope checks are shared with the JSON report-card endpoint. Student/parent self-service PDF downloads remain pending.
 - Attendance capture and correction history.
 - Assessment entry, moderation/approval and report-card publishing. Teacher report-card access is restricted to currently assigned classes.
 - Assignment creation, resources and feedback.
