@@ -88,3 +88,25 @@ Fill this in during the actual release:
 - Smoke test result:
 - Rollback decision / notes:
 - Release completed at:
+
+
+## Supabase live staging-readiness audit (5 November 2026)
+
+Read-only verification against project `xivzduvqpuqbecskxaoj`:
+
+- PostgreSQL reports version `17.11`; the SQL inspection session is running as `postgres`.
+- The live migration ledger contains exactly four applied migrations: `20261104074727`, `20261104082848`, `20261104082933`, and `20261104083032`. No proposed migration was applied during this audit.
+- The Security Advisor reports 20 RLS-enabled public tables without policies and leaked-password protection disabled. The only current public policy is SELECT on `profiles` for the authenticated user's own `id`.
+- The direct table-grant audit found only `authenticated SELECT` on `public.profiles`; no `anon` or `PUBLIC` table grants were returned. Therefore the 20 no-policy findings are not evidence of direct browser table access under current grants, but they remain a hard blocker for a future non-BYPASSRLS API role.
+- Live role flags: `anon` and `authenticated` have no BYPASSRLS; `postgres` and `service_role` do. Do not switch Render to either built-in privileged role as a least-privilege fix.
+- Performance Advisor reports 26 unindexed foreign keys and 18 unused-index candidates. Do not drop unused indexes without workload evidence; review FK indexes against query patterns and write overhead.
+- Live constraints include invoice number, receipt number and student number uniqueness within a school. The proposed payment-reference uniqueness (`school_id, reference`) and payment-allocation pair uniqueness (`payment_id, invoice_id`) are not present in the live constraint inventory; their staging-only proposal remains unapplied.
+- All inspected existing constraints were validated. Existing simple foreign keys do not uniformly encode same-school relationships; the proposed composite tenant foreign keys still require staging validation.
+- No staging validation was performed in this pass. No production DDL, role, grant, Auth setting, or credential was changed.
+
+**Release decision:** Supabase is not staging-ready for the least-privilege/RLS cutover. Do not apply the candidate migrations or switch Render's database identity. First provision/confirm an isolated staging database, restore representative test data, implement trusted transaction context and reviewed policies, then run API integration and negative cross-tenant tests under a dedicated `BYPASSRLS=false` role. Enable leaked-password protection through a reviewed Auth configuration change before production launch.
+
+### Supabase platform changes to account for
+
+- Supabase CLI v3 became the default on 2 November 2026. Its database commands now target the local stack by default; hosted changes require explicit remote targeting and confirmation. Pin CLI v2 or update every CI/deployment command deliberately before upgrading. Do not run a hosted migration command without an explicit remote target and approval. [Supabase CLI v3 breaking-change notice](https://supabase.com/changelog?types=breaking-change)
+- Supabase plans to remove four legacy CBC-mode TLS 1.2 cipher suites from HTTP APIs on 10 November 2026 at the earliest. Current supported browsers and OSes should be unaffected, but check any old embedded clients or legacy TLS libraries used by schools. [TLS cipher deprecation notice](https://supabase.com/changelog/cbc-tls-ciphers-deprecated)
