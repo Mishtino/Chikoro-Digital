@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import get_db
-from app.deps_supabase import SupabasePrincipal, require_supabase_roles
+from app.deps_supabase import SupabasePrincipal, get_supabase_principal, require_supabase_roles
 from app.models.school import School
 from app.models.student import Student
 from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
@@ -456,9 +456,9 @@ def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal 
 
 
 @router.post("/reconcile")
-def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    if not principal.is_admin:
-        raise HTTPException(status_code=403, detail="Admin only")
+def reconcile(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if not principal.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
     pending = db.query(PaynowAttempt).filter(PaynowAttempt.status.in_(("sent", "unverified"))).with_for_update(skip_locked=True).all()
     updated = 0
     for att in pending:
