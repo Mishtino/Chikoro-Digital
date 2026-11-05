@@ -12,10 +12,12 @@ export default function StudentHomeworkPortal() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [uploadingId, setUploadingId] = useState('');
+  const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
 
   async function loadAssignments() {
     const data = await api('/homework/student/assignments');
     setAssignments(data.assignments || []);
+    setAttachmentsEnabled(data.attachments_enabled === true);
   }
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export default function StudentHomeworkPortal() {
           return;
         }
         const rows = await api('/homework/student/assignments');
-        if (active) setAssignments(rows.assignments || []);
+        if (active) { setAssignments(rows.assignments || []); setAttachmentsEnabled(rows.attachments_enabled === true); }
       } catch (e) {
         if (active) setError(e.message || 'Unable to load your homework.');
       } finally {
@@ -138,11 +140,11 @@ export default function StudentHomeworkPortal() {
           {item.score !== null && item.score !== undefined && <p><strong>Score:</strong> {item.score}</p>}
           {item.feedback && <p><strong>Teacher feedback:</strong> {item.feedback}</p>}
           {!!item.attachments?.length && <div><strong>Your files</strong><ul>{item.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button></li>)}</ul></div>}
-          <form onSubmit={event => uploadAttachment(event, item)} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+          {attachmentsEnabled && <form onSubmit={event => uploadAttachment(event, item)} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
             <input name="attachment" type="file" required accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.txt" />
             <button type="submit" disabled={uploadingId === String(item.id)}>{uploadingId === String(item.id) ? 'Uploading…' : 'Add attachment'}</button>
             <small style={{ color: '#64748b' }}>PDF, Office documents, JPG, PNG or TXT · max 10 MB each · up to 5 files</small>
-          </form>
+          </form>}
         </div>}
       </article>)}
     </section>
