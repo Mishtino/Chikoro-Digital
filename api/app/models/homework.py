@@ -60,6 +60,7 @@ class HomeworkSubmission(Base):
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("school_id", "id", name="uq_homework_submissions_school_id_id"),
         UniqueConstraint("school_id", "assignment_id", "student_id", name="uq_homework_submission_once"),
         ForeignKeyConstraint(["school_id", "assignment_id"], ["homework_assignments.school_id", "homework_assignments.id"], name="fk_homework_submission_school_assignment"),
         ForeignKeyConstraint(["school_id", "student_id"], ["students.school_id", "students.id"], name="fk_homework_submission_school_student"),
