@@ -18,6 +18,12 @@ The finance summary excludes void invoices and allocations from voided payments.
 
 Teacher sign-ins route to `/school-admin/teacher`. The workspace lists school learners, terms, subjects and assessments; teachers can create subjects and assessments and submit bulk learner marks as drafts. Only owners and headmasters can approve and publish marks. Teachers can read their own school's terms but cannot request another school's terms.
 
+## Class management and teacher assignments
+
+Owners and headmasters can use `/school-admin/classes` to view active class groups (derived from learner form/class values), assign active school teachers to a class, and remove assignments. Teachers see only their own assigned classes and assignments. The API now limits teacher learner-directory reads and individual learner lookups to assigned classes, blocks teacher learner creation, limits mark entry to assigned classes, and restricts attendance registers to assigned classes. Teachers see timetable entries for their assigned classes or periods assigned directly to them. This closes the earlier school-wide teacher visibility gap; class-level authorization is now the default.
+
+The assignment table is in `supabase/proposed_migrations/20261105_add_class_teacher_assignments.sql` only and has not been applied. Until this migration is validated in staging, teacher-facing class and attendance workflows remain gated from production release.
+
 ## Timetable workspace
 
 Owners and headmasters can manage the weekly timetable at `/school-admin/timetable`; teachers have read-only access. Entries are scoped to a school and academic term and include class/form, subject, optional teacher, weekday, period number, start/end time and room. The API rejects overlapping class, assigned-teacher or room bookings, validates teacher/subject/term membership, and records create/delete audit events. A school row lock serializes timetable writes before conflict checks. The database enforces one period number per class/day/term and composite foreign keys keep terms, subjects and assigned teachers within the school.
