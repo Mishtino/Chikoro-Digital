@@ -232,7 +232,7 @@ def save_session_records(
             row.status = entry.status
             row.note = entry.note
             row.marked_by_user_id = principal.user_id
-    db.commit()
+    db.flush()
     write_audit(db, principal, "attendance.records.save", "attendance_session", session.id, {
         "count": len(payload.entries),
     }, school_id=sid)
@@ -268,7 +268,7 @@ def submit_session(
         raise HTTPException(status_code=409, detail="This class has no active learners")
     session.status = "submitted"
     session.submitted_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.commit()
+    db.flush()
     write_audit(db, principal, "attendance.session.submit", "attendance_session", session.id, {
         "learner_count": len(roster),
     }, school_id=sid)
