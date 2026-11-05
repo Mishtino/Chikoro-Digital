@@ -393,8 +393,12 @@ def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
 
     # This temporary table mirrors the live guardian_links columns used by
     # _parent_student_ids without needing a paid Supabase staging branch.
+    # SQLite's attached "public" schema mirrors the schema-qualified
+    # table reference used by the production PostgreSQL query.
+    db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
+    db_session.execute(text("DROP TABLE IF EXISTS public.guardian_links"))
     db_session.execute(text("""
-        CREATE TEMP TABLE guardian_links (
+        CREATE TABLE public.guardian_links (
             profile_id TEXT NOT NULL,
             contact_id INTEGER NOT NULL,
             school_id INTEGER NOT NULL,
