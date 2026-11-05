@@ -68,7 +68,7 @@ class GenerateInvoicesRequest(BaseModel):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
@@ -94,7 +94,7 @@ def create_term(payload: TermCreate, principal: SupabasePrincipal = Depends(requ
 
 @router.get("/terms", response_model=List[TermOut])
 def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     return db.query(Term).filter(Term.school_id == sid).order_by(Term.id).all()
@@ -117,7 +117,7 @@ def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depen
 
 @router.get("/fee-items", response_model=List[FeeItemOut])
 def list_fee_items(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     return db.query(FeeItem).filter(FeeItem.school_id == sid).order_by(FeeItem.id).all()
