@@ -422,3 +422,26 @@ def test_subject_trends_are_term_ordered_and_teacher_class_scoped(client, db_ses
     denied = client.get("/results/analytics/subject-trends", params={"class_name": "Form 2"})
     assert denied.status_code == 403
 
+
+
+
+def test_platform_and_legacy_admin_flags_cannot_bypass_school_role_dependencies(client, seed_two_schools):
+    admin = seed_two_schools["admin"]
+    owner = seed_two_schools["u1"]
+    principals = [
+        SupabasePrincipal(
+            auth_user_id=uuid4(), user_id=admin.id,
+            school_id=None, role="vortex_admin", is_admin=True,
+        ),
+        SupabasePrincipal(
+            auth_user_id=uuid4(), user_id=owner.id,
+            school_id=owner.school_id, role="owner", is_admin=True,
+        ),
+    ]
+    for principal in principals:
+        app.dependency_overrides[get_supabase_principal] = lambda principal=principal: principal
+        response = client.get(
+            "/results/subjects",
+            params={"school_id": seed_two_schools["s1"].id},
+        )
+        assert response.status_code == 403
