@@ -421,3 +421,40 @@ def test_payment_and_invoice_detail_reads_hide_other_school_records(client, db_s
 
     assert invoice_response.status_code == 404
     assert payment_response.status_code == 404
+
+
+
+def test_database_rejects_cross_school_payment_allocation(db_session):
+    school = School(code="PAY012", name="Allocation Tenant")
+    other_school = School(code="PAY013", name="Foreign Allocation Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    own_student = Student(
+        school_id=school.id, student_number="PAY-ALLOC-OWN",
+        first_name="Own", last_name="Learner", status="active",
+    )
+    foreign_student = Student(
+        school_id=other_school.id, student_number="PAY-ALLOC-FOREIGN",
+        first_name="Foreign", last_name="Learner", status="active",
+    )
+    db_session.add_all([own_student, foreign_student])
+    db_session.flush()
+    invoice = Invoice(
+        school_id=other_school.id, student_id=foreign_student.id,
+        invoice_number="PAY-ALLOC-INV", currency="USD", total=10,
+        status="issued",
+    )
+    payment = Payment(
+        school_id=school.id, student_id=own_student.id,
+        amount=10, currency="USD", method="cash",
+    )
+    db_session.add_all([invoice, payment])
+    db_session.flush()
+
+    db_session.add(PaymentAllocation(
+        school_id=school.id, payment_id=payment.id,
+        invoice_id=invoice.id, amount=10,
+    ))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
