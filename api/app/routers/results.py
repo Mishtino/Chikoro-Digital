@@ -48,6 +48,8 @@ def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
@@ -145,6 +147,65 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
     db.commit()
     write_audit(db, principal, "marks.enter", "assessment", None, {"count": created}, school_id=sid)
     return {"saved": created}
+
+
+
+@router.get("/marks")
+def list_marks(
+    assessment_id: Optional[int] = Query(None),
+    term_id: Optional[int] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    school_id: Optional[int] = Query(None),
+    principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')),
+    db: Session = Depends(get_db),
+):
+    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    if sid is None:
+        raise HTTPException(status_code=403, detail="School context required")
+    if status_filter is not None and status_filter not in {"draft", "approved", "published"}:
+        raise HTTPException(status_code=422, detail="Invalid mark status")
+    if term_id is not None and db.query(Term).filter(Term.id == term_id, Term.school_id == sid).first() is None:
+        raise HTTPException(status_code=404, detail="Term not found in this school")
+
+    query = (
+        db.query(Mark, Student, Assessment, Subject)
+        .join(Student, Student.id == Mark.student_id)
+        .join(Assessment, Assessment.id == Mark.assessment_id)
+        .join(Subject, Subject.id == Assessment.subject_id)
+        .filter(
+            Mark.school_id == sid,
+            Student.school_id == sid,
+            Assessment.school_id == sid,
+            Subject.school_id == sid,
+        )
+    )
+    if assessment_id is not None:
+        query = query.filter(Mark.assessment_id == assessment_id)
+    if term_id is not None:
+        query = query.filter(Assessment.term_id == term_id)
+    if status_filter is not None:
+        query = query.filter(Mark.status == status_filter)
+    if principal.role == "teacher" and not principal.is_admin:
+        query = query.filter(Mark.entered_by_user_id == principal.user_id)
+
+    rows = query.order_by(Mark.id.desc()).limit(1000).all()
+    return [
+        {
+            "id": mark.id,
+            "student_id": student.id,
+            "student_number": student.student_number,
+            "student_name": f"{student.first_name} {student.last_name}",
+            "assessment_id": assessment.id,
+            "assessment_name": assessment.name,
+            "subject_name": subject.name,
+            "term_id": assessment.term_id,
+            "score": float(mark.score),
+            "max_score": float(assessment.max_score),
+            "status": mark.status,
+            "published_at": mark.published_at.isoformat() if mark.published_at else None,
+        }
+        for mark, student, assessment, subject in rows
+    ]
 
 
 @router.post("/marks/approve")
