@@ -33,12 +33,12 @@ class VoidRequest(BaseModel):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
-        if requested is None:
-            raise HTTPException(status_code=400, detail="school_id required")
-        return requested
-    if principal.school_id is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    # Payment routes are school-scoped; platform identities must use the
+    # separately permissioned platform APIs, never a legacy is_admin bypass.
+    if principal.is_admin or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
@@ -140,7 +140,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     }
 @router.get("")
 def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id)
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Payment).filter(Payment.school_id == sid)
@@ -164,11 +164,14 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @router.post("/{payment_id}/void")
 def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    payment = db.get(Payment, payment_id)
+    if principal.school_id is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    payment = db.query(Payment).filter(
+        Payment.id == payment_id,
+        Payment.school_id == principal.school_id,
+    ).first()
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
-    if not principal.is_admin and principal.school_id != payment.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     if payment.voided:
         raise HTTPException(status_code=400, detail="Already voided")
     payment.voided = True
@@ -212,12 +215,18 @@ def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @invoices_router.get("/{invoice_id}")
 def get_invoice(invoice_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    inv = db.get(Invoice, invoice_id)
+    if principal.school_id is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.school_id == principal.school_id,
+    ).first()
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if not principal.is_admin and principal.school_id != inv.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    lines = db.query(InvoiceLine).filter(InvoiceLine.invoice_id == inv.id).all()
+    lines = db.query(InvoiceLine).filter(
+        InvoiceLine.invoice_id == inv.id,
+        InvoiceLine.school_id == principal.school_id,
+    ).all()
     bal = invoice_balance(db, inv)
     return {
         "id": inv.id,
