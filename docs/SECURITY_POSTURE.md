@@ -52,3 +52,10 @@ The connected Supabase project was queried without modifying data:
 - The live `public.profiles` table currently has no CHECK constraints. The platform staff invitation path therefore remains correctly fail-closed until the role constraint migration is reconciled and applied through the approved release process.
 
 These are point-in-time findings, not a guarantee that the database remains unchanged. No SQL DDL, data writes, migration application, or production configuration changes were made during this audit.
+
+
+## Migration history quarantine — 5 November 2026
+
+The repository's three former migration drafts (`202611040001`–`003`) did not match the four migration versions recorded by the live Supabase project. They have been moved from `supabase/migrations/` to `supabase/proposed_migrations/` so the normal Supabase migration command cannot accidentally apply them. The standard migration directory now contains a README that explicitly blocks `supabase db push` until the original live migration SQL is recovered and a canonical history is reconstructed.
+
+A proposed forward-only `profiles_role_check` migration is also stored in `supabase/proposed_migrations/`. It preserves live foreign keys, RLS flags, grants, and the own-profile SELECT policy. It is for staging review only. No production migration or identity link was applied.
