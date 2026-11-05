@@ -8,10 +8,11 @@ from app.models.paynow import PaynowAttempt
 from app.models.results import Subject, Assessment, Mark
 from app.models.notification import Notification
 from app.models.attendance import AttendanceSession, AttendanceRecord
+from app.models.timetable import TimetableEntry
 
 __all__ = [
     "School", "User", "AuditLog", "Student", "Contact", "Term", "FeeItem",
     "FeeStructure", "FeeStructureItem", "Invoice", "InvoiceLine", "Payment",
-    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord",
+    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry",
 ]
 
