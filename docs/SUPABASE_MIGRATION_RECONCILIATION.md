@@ -8,11 +8,13 @@
 
 The live Supabase migration ledger and the repository migration directory are not aligned. Do not run `supabase db push`, manually insert migration-history rows, or apply the repository SQL until the original four live migration definitions have been recovered and compared.
 
-### Repository migration files
+### Former repository migration drafts (now quarantined)
 
-- `202611040001_profiles_identity_bridge.sql`
-- `202611040002_vortex_platform_role.sql`
-- `202611040003_vortex_staff_roles.sql`
+- `supabase/proposed_migrations/legacy_202611040001_profiles_identity_bridge.sql`
+- `supabase/proposed_migrations/legacy_202611040002_vortex_platform_role.sql`
+- `supabase/proposed_migrations/legacy_202611040003_vortex_staff_roles.sql`
+
+These three drafts were removed from `supabase/migrations/` and preserved under `supabase/proposed_migrations/`. The standard migration directory contains a blocking README until the original live migration definitions are recovered. Do not run `supabase db push`.
 
 ### Live migration ledger
 
@@ -95,3 +97,8 @@ A proposed migration is now stored separately at:
 It adds and validates only the `profiles_role_check` constraint. It does not recreate the table, alter foreign keys, change RLS/FORCE RLS, change grants or policies, or promote/link any user. It explicitly aborts if a constraint with that name already exists or if an existing profile role is outside the approved list.
 
 **This is a staging proposal, not an applied migration and not yet in the standard `supabase/migrations` directory.** The four original live migration SQL definitions are still unavailable in the repository, so migration history reconciliation remains incomplete. Run this proposal only against a staging clone after comparing the original migration definitions and verifying the staging schema matches the audited live schema.
+
+
+## Migration quarantine safeguard — 5 November 2026
+
+The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. This prevents a routine Supabase CLI migration push from treating those unreconciled drafts as pending production migrations. `supabase/migrations/README.md` explicitly blocks pushes until the original four live SQL definitions are recovered. The proposed role allow-list SQL remains outside the standard migration path. This is a repository safety measure only; it does not alter the live Supabase migration ledger or database.
