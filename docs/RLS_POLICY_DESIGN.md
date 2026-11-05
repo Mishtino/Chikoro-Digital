@@ -86,3 +86,47 @@ This is a starting policy map, not executable SQL. Exact read/write operations m
 ## Release gate
 
 Do not apply this design to production or change Render's database connection until staging passes and the complete migration and rollback plan is reviewed. See DB_LEAST_PRIVILEGE_PLAN.md, DB_ACCESS_MATRIX.md and RELEASE_RUNBOOK.md.
+
+
+## Fresh live-database and API-source findings (5 November 2026)
+
+### PostgreSQL role boundary
+
+The live role audit confirms:
+
+- Render's current `postgres` role is not a superuser, but has `BYPASSRLS = true`, can create databases/roles, and is a member of several elevated/default roles.
+- Supabase's built-in `service_role` also has `BYPASSRLS = true`; it is not a safe replacement for the Render API connection.
+- `service_role` is non-login in this project, and `authenticator` is a login role that can assume `anon`, `authenticated`, and `service_role`.
+- `anon` and `authenticated` cannot CREATE in `public` or access the `private` schema. They have no public-table DML grants except authenticated SELECT on profiles.
+- `postgres` can access the `private` schema. The API runtime must not inherit `postgres`, `service_role`, `supabase_privileged_role`, or any bypass-capable role.
+
+Do not use either built-in privileged role for the new application runtime. A new dedicated login identity must be created with no elevated role memberships, no object ownership, no schema CREATE, and `BYPASSRLS = false`.
+
+### Current API identity bootstrap
+
+The API does not currently set PostgreSQL request claims or tenant context. `get_db()` creates a plain SQLAlchemy Session, and `get_supabase_principal()` verifies the bearer token then calls `resolve_profile()`. That resolver joins `public.profiles` and `public.users`.
+
+A viable staged design is:
+
+1. Verify the Supabase JWT in FastAPI as today.
+2. Before the profile lookup, set the verified subject as a transaction-local `request.jwt.claim.sub` value on the same database connection. This allows a carefully scoped own-profile policy using `auth.uid()` to resolve the identity.
+3. Give the candidate runtime role an own-profile SELECT policy and a `users` self-row policy that derives the local user ID only through the caller's own profile row.
+4. After resolving the trusted profile, set transaction-local school/role context for later table policies. Never derive authorization context from request JSON or user-editable JWT metadata.
+5. Reapply verified context whenever SQLAlchemy begins a new transaction after a route commit. The present `get_db()` implementation has no such event hook or context management; this is an implementation prerequisite, not an existing capability.
+
+The custom context values are trusted only because the API sets them after cryptographic JWT verification. A PostgreSQL custom setting is not tamper-proof against arbitrary SQL running as that same application role. This is defense in depth against missing tenant filters and accidental unscoped queries, not a substitute for parameterized SQL or injection prevention.
+
+### Exceptional access paths confirmed in source
+
+- `/auth/bootstrap-admin` uses a static bootstrap header and queries/updates platform-wide user/profile records plus `auth.users`. It is not an ordinary authenticated school request. Keep it disabled until a one-time bootstrap design is reviewed; prefer Supabase Auth Admin API for the Auth identity lookup rather than granting the runtime broad `auth.users` access.
+- Student and parent activation verify a Supabase bearer token but query `auth.users` directly for confirmed email, then search activation PIN records before a profile is linked. Prefer the Supabase Auth user endpoint to obtain the verified user's email/confirmation state, and design a dedicated narrow activation access path for contacts, students, profiles, users, guardian links and audit events.
+- `/paynow/webhook` has no Supabase principal; it finds an attempt by callback reference/poll URL and performs provider polling and settlement. It needs a separate restricted provider-callback path/identity or a narrowly designed server-only policy. Never let untrusted callback fields select an arbitrary privileged RLS context.
+- `/paynow/reconcile` is an authenticated platform-owner operation that scans pending attempts across schools. It requires a dedicated platform/system policy boundary; it must not be implemented as a blanket school bypass.
+- The only discovered SECURITY DEFINER function remains `private.handle_new_auth_user()`, owned by `postgres`; preserve its isolation and do not grant the API access to `private`.
+
+### Advisor findings
+
+- Security Advisor: 20 `rls_enabled_no_policy` findings, plus `auth_leaked_password_protection` disabled. The existing profile policy is the only policy.
+- Performance Advisor: 26 foreign keys without covering indexes and 18 indexes reported unused. Do not drop unused indexes based on a low-traffic/near-empty database; assess workload and query plans first. Index proposals should be a separate, reviewed performance migration.
+
+References: [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security), [Leaked password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
