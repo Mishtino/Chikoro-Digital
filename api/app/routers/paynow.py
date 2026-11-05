@@ -72,7 +72,10 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
     receipt-number allocation across different checkouts in the same tenant.
     """
     ref_key = f"paynow:{attempt.id}"
-    existing = db.query(Payment).filter(Payment.reference == ref_key).first()
+    existing = db.query(Payment).filter(
+        Payment.school_id == attempt.school_id,
+        Payment.reference == ref_key,
+    ).first()
     if existing is not None:
         return True
 
