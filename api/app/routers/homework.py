@@ -122,6 +122,11 @@ def list_assignments(
     if principal.role == "teacher":
         query = query.filter(HomeworkAssignment.created_by_user_id == principal.user_id)
     rows = query.order_by(HomeworkAssignment.created_at.desc()).limit(500).all()
+    if principal.role == "teacher":
+        rows = [
+            (assignment, subject) for assignment, subject in rows
+            if require_teacher_class(db, principal, sid, assignment.class_name)
+        ]
     return {"assignments": [_assignment_out(a, s) for a, s in rows]}
 
 
@@ -253,6 +258,8 @@ def submit_homework(
     db.add(submission)
     db.commit()
     db.refresh(submission)
+    write_audit(db, principal, "homework.submission.create", "homework_submission", submission.id,
+                {"assignment_id": assignment.id}, school_id=student.school_id)
     return {"id": submission.id, "status": submission.status, "submitted_at": submission.submitted_at.isoformat()}
 
 
