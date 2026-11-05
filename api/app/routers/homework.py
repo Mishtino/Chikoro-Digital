@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import math
+from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -8,13 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, get_supabase_principal, require_supabase_roles
-from app.models.homework import HomeworkAssignment, HomeworkSubmission
+from app.models.homework import HomeworkAssignment, HomeworkSubmission, HomeworkAttachment
 from app.models.results import Subject
 from app.models.student import Student
 from app.models.fee import Term
 from app.services.audit import write_audit
 from app.services.class_access import require_teacher_class
 from app.routers.portal import _parent_student, _student_portal_student
+from app.services.homework_storage import (
+    StorageOperationError, create_upload_url, create_download_url, inspect_object,
+)
 
 router = APIRouter(prefix="/homework", tags=["homework"])
 
@@ -298,3 +302,221 @@ def parent_child_assignments(
          "score": float(submission.score) if submission and submission.score is not None else None}
         for a, subject, submission in rows
     ]}
+
+
+
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENTS_PER_SUBMISSION = 5
+ALLOWED_ATTACHMENT_TYPES = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "text/plain": "txt",
+}
+
+
+class AttachmentUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=120)
+    size_bytes: int = Field(gt=0, le=MAX_ATTACHMENT_BYTES)
+
+    @field_validator("filename", "content_type")
+    @classmethod
+    def clean_attachment_text(cls, value):
+        value = value.strip()
+        if not value or any(ord(char) < 32 for char in value):
+            raise ValueError("Invalid attachment metadata")
+        return value
+
+
+def _attachment_out(attachment):
+    return {
+        "id": attachment.id,
+        "filename": attachment.original_filename,
+        "content_type": attachment.content_type,
+        "size_bytes": attachment.size_bytes,
+        "status": attachment.status,
+        "created_at": attachment.created_at.isoformat(),
+    }
+
+
+def _submission_and_assignment(db, school_id, submission_id):
+    submission = db.query(HomeworkSubmission).filter(
+        HomeworkSubmission.id == submission_id,
+        HomeworkSubmission.school_id == school_id,
+    ).first()
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    assignment = db.query(HomeworkAssignment).filter(
+        HomeworkAssignment.id == submission.assignment_id,
+        HomeworkAssignment.school_id == school_id,
+    ).first()
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return submission, assignment
+
+
+@router.post("/student/submissions/{submission_id}/attachments/upload-url", status_code=status.HTTP_201_CREATED)
+def create_homework_attachment_upload(
+    submission_id: int,
+    payload: AttachmentUploadRequest,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+    student = _student_portal_student(principal, db)
+    submission, assignment = _submission_and_assignment(db, student.school_id, submission_id)
+    if submission.student_id != student.id or assignment.status != "published":
+        raise HTTPException(status_code=404, detail="Submission not found")
+    content_type = payload.content_type.lower()
+    extension = ALLOWED_ATTACHMENT_TYPES.get(content_type)
+    if extension is None:
+        raise HTTPException(status_code=415, detail="File type is not allowed")
+    filename = payload.filename.replace("\\", "/").split("/")[-1].strip()
+    if not filename or filename in {".", ".."}:
+        raise HTTPException(status_code=422, detail="Invalid filename")
+    count = db.query(HomeworkAttachment).filter(
+        HomeworkAttachment.school_id == student.school_id,
+        HomeworkAttachment.submission_id == submission.id,
+    ).count()
+    if count >= MAX_ATTACHMENTS_PER_SUBMISSION:
+        raise HTTPException(status_code=409, detail="Maximum of five attachments reached")
+    object_path = (
+        f"schools/{student.school_id}/assignments/{assignment.id}/"
+        f"submissions/{submission.id}/{uuid4().hex}.{extension}"
+    )
+    try:
+        upload_url = create_upload_url(object_path)
+    except StorageOperationError:
+        raise HTTPException(status_code=503, detail="Private file storage is unavailable") from None
+    attachment = HomeworkAttachment(
+        school_id=student.school_id,
+        submission_id=submission.id,
+        uploaded_by_user_id=principal.user_id,
+        object_path=object_path,
+        original_filename=filename[:255],
+        content_type=content_type,
+        size_bytes=payload.size_bytes,
+        status="pending",
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    write_audit(
+        db, principal, "homework.attachment.upload_url", "homework_attachment",
+        attachment.id, {"submission_id": submission.id, "size_bytes": payload.size_bytes},
+        school_id=student.school_id,
+    )
+    return {
+        "attachment": _attachment_out(attachment),
+        "upload_url": upload_url,
+        "method": "PUT",
+        "expires_in_seconds": 7200,
+    }
+
+
+@router.post("/student/attachments/{attachment_id}/complete")
+def complete_homework_attachment_upload(
+    attachment_id: int,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.role != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+    student = _student_portal_student(principal, db)
+    attachment = db.query(HomeworkAttachment).filter(
+        HomeworkAttachment.id == attachment_id,
+        HomeworkAttachment.school_id == student.school_id,
+        HomeworkAttachment.uploaded_by_user_id == principal.user_id,
+    ).first()
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if attachment.status == "ready":
+        return {"id": attachment.id, "status": "ready"}
+    try:
+        stored = inspect_object(attachment.object_path)
+    except StorageOperationError:
+        raise HTTPException(status_code=409, detail="Uploaded file could not be verified") from None
+    if (
+        stored["size_bytes"] != attachment.size_bytes
+        or stored["size_bytes"] > MAX_ATTACHMENT_BYTES
+        or stored["content_type"] != attachment.content_type
+    ):
+        raise HTTPException(status_code=422, detail="Uploaded file metadata does not match the request")
+    attachment.status = "ready"
+    db.commit()
+    write_audit(
+        db, principal, "homework.attachment.complete", "homework_attachment",
+        attachment.id, {"size_bytes": attachment.size_bytes}, school_id=student.school_id,
+    )
+    return {"id": attachment.id, "status": "ready"}
+
+
+@router.get("/submissions/{submission_id}/attachments")
+def list_homework_attachments(
+    submission_id: int,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    sid = _school_id(principal)
+    submission, assignment = _submission_and_assignment(db, sid, submission_id)
+    if principal.role == "student":
+        student = _student_portal_student(principal, db)
+        if submission.student_id != student.id:
+            raise HTTPException(status_code=404, detail="Submission not found")
+    elif principal.role == "parent":
+        _parent_student(principal, submission.student_id, db)
+    elif principal.role == "teacher":
+        if assignment.created_by_user_id != principal.user_id:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        require_teacher_class(db, principal, sid, assignment.class_name)
+    elif principal.role not in {"owner", "headmaster"}:
+        raise HTTPException(status_code=403, detail="Role cannot access attachments")
+    rows = db.query(HomeworkAttachment).filter(
+        HomeworkAttachment.school_id == sid,
+        HomeworkAttachment.submission_id == submission.id,
+        HomeworkAttachment.status == "ready",
+    ).order_by(HomeworkAttachment.created_at.asc()).all()
+    return {"attachments": [_attachment_out(row) for row in rows]}
+
+
+@router.post("/attachments/{attachment_id}/download-url")
+def create_homework_attachment_download(
+    attachment_id: int,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    sid = _school_id(principal)
+    attachment = db.query(HomeworkAttachment).filter(
+        HomeworkAttachment.id == attachment_id,
+        HomeworkAttachment.school_id == sid,
+        HomeworkAttachment.status == "ready",
+    ).first()
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    submission, assignment = _submission_and_assignment(db, sid, attachment.submission_id)
+    if principal.role == "student":
+        student = _student_portal_student(principal, db)
+        if submission.student_id != student.id:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+    elif principal.role == "parent":
+        _parent_student(principal, submission.student_id, db)
+    elif principal.role == "teacher":
+        if assignment.created_by_user_id != principal.user_id:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        require_teacher_class(db, principal, sid, assignment.class_name)
+    elif principal.role not in {"owner", "headmaster"}:
+        raise HTTPException(status_code=403, detail="Role cannot download attachments")
+    try:
+        signed_url = create_download_url(attachment.object_path, expires_in=300)
+    except StorageOperationError:
+        raise HTTPException(status_code=503, detail="Private file storage is unavailable") from None
+    write_audit(
+        db, principal, "homework.attachment.download_url", "homework_attachment",
+        attachment.id, {"submission_id": submission.id}, school_id=sid,
+    )
+    return {"download_url": signed_url, "expires_in_seconds": 300}
