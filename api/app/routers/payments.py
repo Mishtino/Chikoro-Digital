@@ -166,10 +166,17 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     if principal.school_id is None or principal.is_admin:
         raise HTTPException(status_code=403, detail="School-scoped access required")
+    # Use the same school -> payment lock order as payment recording and
+    # Paynow settlement so a void cannot race with a new allocation.
+    school = db.query(School).filter(
+        School.id == principal.school_id
+    ).with_for_update().first()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
     payment = db.query(Payment).filter(
         Payment.id == payment_id,
         Payment.school_id == principal.school_id,
-    ).first()
+    ).with_for_update().first()
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
     if payment.voided:
