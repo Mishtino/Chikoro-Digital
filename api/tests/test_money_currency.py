@@ -185,3 +185,20 @@ def test_payment_amount_precision_is_explicit():
     assert not is_valid_payment_amount("Infinity")
     assert not is_valid_payment_amount("0")
     assert not is_valid_payment_amount("-0.01")
+
+
+def test_payment_request_schemas_preserve_decimal_input_without_float_conversion():
+    from decimal import Decimal
+    from app.routers.payments import PaymentCreate
+    from app.routers.paynow import PaynowInitiateRequest
+
+    exact_amount = "0.30000000000000004"
+    manual = PaymentCreate(
+        student_id=1, amount=exact_amount, currency="USD"
+    )
+    paynow = PaynowInitiateRequest(amount=exact_amount)
+
+    assert manual.amount == Decimal(exact_amount)
+    assert paynow.amount == Decimal(exact_amount)
+    assert not is_valid_payment_amount(manual.amount)
+    assert not is_valid_payment_amount(paynow.amount)
