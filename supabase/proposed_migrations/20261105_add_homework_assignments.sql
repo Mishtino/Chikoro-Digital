@@ -87,6 +87,15 @@ BEGIN
     WHERE id = 'homework-private'
       AND public = false
       AND file_size_limit = 10485760
+      AND allowed_mime_types = ARRAY[
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'image/jpeg',
+        'image/png',
+        'text/plain'
+      ]
   ) THEN
     RAISE EXCEPTION 'homework-private bucket must be private with a 10 MiB size limit';
   END IF;
