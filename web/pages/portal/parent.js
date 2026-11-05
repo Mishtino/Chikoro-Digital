@@ -10,6 +10,14 @@ export default function ParentPortal() {
   const [fees, setFees] = useState(null);
   const [results, setResults] = useState(null);
   const [attendance, setAttendance] = useState(null);
+  const [teachers, setTeachers] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversationId, setSelectedConversationId] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [messageSubject, setMessageSubject] = useState('');
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [terms, setTerms] = useState([]);
   const [selectedTermId, setSelectedTermId] = useState('');
   const [termsLoaded, setTermsLoaded] = useState(false);
@@ -106,6 +114,79 @@ export default function ParentPortal() {
     return () => { active = false; };
   }, [selectedId, selectedTermId, termsLoaded]);
 
+
+  useEffect(() => {
+    let active = true;
+    async function loadCommunications() {
+      if (!selectedId) {
+        setTeachers([]); setConversations([]); setSelectedConversationId(''); setMessages([]);
+        return;
+      }
+      try {
+        const [teacherData, conversationData] = await Promise.all([
+          api('/communications/teachers?student_id=' + encodeURIComponent(selectedId)),
+          api('/communications/conversations'),
+        ]);
+        if (!active) return;
+        setTeachers(teacherData.teachers || []);
+        setSelectedTeacherId(teacherData.teachers?.length ? String(teacherData.teachers[0].id) : '');
+        const rows = conversationData.conversations || [];
+        const forChild = rows.filter(row => String(row.student_id) === String(selectedId));
+        setConversations(forChild);
+        setSelectedConversationId(forChild.length ? String(forChild[0].id) : '');
+      } catch (err) {
+        if (active) setError(err.message || 'Unable to load school communications.');
+      }
+    }
+    loadCommunications();
+    return () => { active = false; };
+  }, [selectedId]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadMessages() {
+      if (!selectedConversationId) { setMessages([]); return; }
+      try {
+        const data = await api('/communications/conversations/' + selectedConversationId + '/messages');
+        if (active) setMessages(data.messages || []);
+      } catch (err) { if (active) setError(err.message || 'Unable to load messages.'); }
+    }
+    loadMessages();
+    return () => { active = false; };
+  }, [selectedConversationId]);
+
+  async function startConversation(event) {
+    event.preventDefault();
+    if (!selectedId || !selectedTeacherId || !messageSubject.trim()) return;
+    setSendingMessage(true); setError('');
+    try {
+      const created = await api('/communications/conversations', { method: 'POST', body: JSON.stringify({
+        student_id: Number(selectedId), teacher_user_id: Number(selectedTeacherId), subject: messageSubject.trim(),
+      }) });
+      const data = await api('/communications/conversations');
+      const rows = (data.conversations || []).filter(row => String(row.student_id) === String(selectedId));
+      setConversations(rows);
+      setSelectedConversationId(String(created.id));
+      setMessageSubject('');
+    } catch (err) { setError(err.message || 'Unable to start conversation.'); }
+    finally { setSendingMessage(false); }
+  }
+
+  async function sendParentMessage(event) {
+    event.preventDefault();
+    if (!selectedConversationId || !messageDraft.trim() || sendingMessage) return;
+    setSendingMessage(true); setError('');
+    try {
+      await api('/communications/conversations/' + selectedConversationId + '/messages', {
+        method: 'POST', body: JSON.stringify({ body: messageDraft.trim() }),
+      });
+      const data = await api('/communications/conversations/' + selectedConversationId + '/messages');
+      setMessages(data.messages || []);
+      setMessageDraft('');
+    } catch (err) { setError(err.message || 'Message could not be sent.'); }
+    finally { setSendingMessage(false); }
+  }
+
   async function payFees() {
     if (!selectedId || paying || !fees || Number(fees.total_balance) <= 0) return;
     setPaying(true);
@@ -181,6 +262,40 @@ export default function ParentPortal() {
             <tbody>{attendance.records.map((record, index) => <tr key={record.date + '-' + index}><td>{record.date}</td><td>{record.class_name}</td><td style={{ textTransform: 'capitalize' }}>{record.status}</td><td>{record.note || '—'}</td></tr>)}</tbody>
           </table>
           {attendance.records_limited && <p style={{ color: '#64748b' }}>Showing the latest 100 records.</p>}
+        </div>}
+      </section>}
+
+      {!!children.length && <section className="card" style={{ marginTop: 18 }}>
+        <h2>Message your child's teacher</h2>
+        <p style={{ color: '#64748b' }}>Only teachers currently assigned to this learner's class are available. Messages remain inside the secure school portal.</p>
+        <form onSubmit={startConversation} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+          <label>Assigned teacher
+            <select value={selectedTeacherId} onChange={e => setSelectedTeacherId(e.target.value)} required disabled={!teachers.length} style={{ display: 'block', width: '100%', padding: 10, marginTop: 5 }}>
+              {teachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+            </select>
+          </label>
+          <label>Conversation subject
+            <input value={messageSubject} onChange={e => setMessageSubject(e.target.value)} required maxLength={160} placeholder="e.g. Homework support" style={{ display: 'block', width: '100%', boxSizing: 'border-box', padding: 10, marginTop: 5 }} />
+          </label>
+          <div style={{ alignSelf: 'end' }}><button type="submit" disabled={sendingMessage || !teachers.length}>{sendingMessage ? 'Starting…' : 'Start conversation'}</button></div>
+        </form>
+        {!teachers.length && <p>No class teacher is currently assigned to this learner. Please contact the school office.</p>}
+        {!!conversations.length && <label style={{ display: 'block', marginBottom: 10 }}>Your conversations
+          <select value={selectedConversationId} onChange={e => setSelectedConversationId(e.target.value)} style={{ display: 'block', width: '100%', maxWidth: 500, padding: 10, marginTop: 5 }}>
+            {conversations.map(row => <option key={row.id} value={row.id}>{row.subject} · {row.teacher_name} · {row.status}</option>)}
+          </select>
+        </label>}
+        {selectedConversationId && <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {messages.map(message => <div key={message.id} style={{ padding: 10, margin: '8px 0', borderRadius: 8, background: message.is_mine ? '#eff6ff' : '#f8fafc' }}>
+              <strong>{message.is_mine ? 'You' : 'Teacher'}</strong><p style={{ whiteSpace: 'pre-wrap', margin: '5px 0' }}>{message.body}</p><small style={{ color: '#64748b' }}>{new Date(message.created_at).toLocaleString()}</small>
+            </div>)}
+            {!messages.length && <p>No messages yet. Send the first message below.</p>}
+          </div>
+          <form onSubmit={sendParentMessage} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <textarea value={messageDraft} onChange={e => setMessageDraft(e.target.value)} required maxLength={5000} rows={3} placeholder="Write a message…" style={{ flex: '1 1 260px', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 }} />
+            <button type="submit" disabled={sendingMessage || !messageDraft.trim()}>{sendingMessage ? 'Sending…' : 'Send message'}</button>
+          </form>
         </div>}
       </section>}
 
