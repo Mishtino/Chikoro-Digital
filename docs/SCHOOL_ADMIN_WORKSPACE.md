@@ -18,6 +18,12 @@ The finance summary excludes void invoices and allocations from voided payments.
 
 Teacher sign-ins route to `/school-admin/teacher`. The workspace lists school learners, terms, subjects and assessments; teachers can create subjects and assessments and submit bulk learner marks as drafts. Only owners and headmasters can approve and publish marks. Teachers can read their own school's terms but cannot request another school's terms.
 
+## Timetable workspace
+
+Owners and headmasters can manage the weekly timetable at `/school-admin/timetable`; teachers have read-only access. Entries are scoped to a school and academic term and include class/form, subject, optional teacher, weekday, period number, start/end time and room. The API rejects overlapping class, assigned-teacher or room bookings, validates teacher/subject/term membership, and records create/delete audit events. A school row lock serializes timetable writes before conflict checks. The database enforces one period number per class/day/term and composite foreign keys keep terms, subjects and assigned teachers within the school.
+
+The timetable schema is in `supabase/proposed_migrations/20261105_add_timetable_entries.sql` only. It has not been applied. It must pass staging migration, RLS/grant and end-to-end checks before the timetable API is released.
+
 ## Attendance workspace
 
 Owners, headmasters and teachers can use `/school-admin/attendance` to create one daily register per class/form, mark active learners present, absent, late or excused, add optional notes, save a draft, and submit a complete register. Submission requires every active learner in the selected class to have a status; submitted registers are read-only. The API checks the school and class on every learner, rejects duplicate learners and duplicate class/date registers, and writes audit events. There is no teacher-to-class assignment model yet, so teacher access is currently limited to their own school rather than a particular assigned class.
