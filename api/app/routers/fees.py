@@ -87,7 +87,8 @@ def create_term(payload: TermCreate, principal: SupabasePrincipal = Depends(requ
     term = Term(school_id=sid, name=payload.name, academic_year=payload.academic_year, start_date=payload.start_date, end_date=payload.end_date, is_current=payload.is_current)
     db.add(term)
     db.flush()
-    db.refresh(term)$3(db, principal, "term.create", "term", term.id, {"name": term.name}, school_id=sid)
+    db.refresh(term)
+    write_audit(db, principal, "term.create", "term", term.id, {"name": term.name}, school_id=sid)
     return term
 
 
@@ -164,7 +165,8 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
         )
         db.add(line)
     db.flush()
-    db.refresh(fs)$3(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
+    db.refresh(fs)
+    write_audit(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
     return {"id": fs.id}
 
 
