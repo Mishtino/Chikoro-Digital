@@ -396,6 +396,17 @@ def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
     # SQLite's attached "public" schema mirrors the schema-qualified
     # table reference used by the production PostgreSQL query.
     db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
+    # The production query schema-qualifies all three joined tables. Copy the
+    # fixture rows into SQLite's attached public schema so the test exercises
+    # the same qualification rather than accidentally mixing schemas.
+    db_session.execute(text("""
+        CREATE TABLE public.contacts AS
+        SELECT id, school_id, student_id FROM contacts
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.students AS
+        SELECT id, school_id, status FROM students
+    """))
     db_session.execute(text("DROP TABLE IF EXISTS public.guardian_links"))
     db_session.execute(text("""
         CREATE TABLE public.guardian_links (
