@@ -1,3 +1,6 @@
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from uuid import uuid4
 
 from app.deps_supabase import SupabasePrincipal, get_supabase_principal
@@ -137,3 +140,78 @@ def test_manual_receipt_numbering_does_not_reuse_existing_gap(client, db_session
 
     assert response.status_code == 201
     assert response.json()["receipt_number"] == "RCP-00004"
+
+
+def test_payment_reference_is_unique_per_school(db_session):
+    first_school = School(code="PAY004", name="Reference Tenant One")
+    second_school = School(code="PAY005", name="Reference Tenant Two")
+    db_session.add_all([first_school, second_school])
+    db_session.flush()
+    first_student = Student(
+        school_id=first_school.id, student_number="PAY-REF-1",
+        first_name="Reference", last_name="One", status="active",
+    )
+    second_student = Student(
+        school_id=second_school.id, student_number="PAY-REF-2",
+        first_name="Reference", last_name="Two", status="active",
+    )
+    db_session.add_all([first_student, second_student])
+    db_session.flush()
+    db_session.add(Payment(
+        school_id=first_school.id, student_id=first_student.id,
+        amount=10, currency="USD", method="bank", reference="BANK-REF-1",
+    ))
+    db_session.commit()
+
+    # A different school may legitimately receive the same external reference.
+    db_session.add(Payment(
+        school_id=second_school.id, student_id=second_student.id,
+        amount=10, currency="USD", method="bank", reference="BANK-REF-1",
+    ))
+    db_session.commit()
+
+    db_session.add(Payment(
+        school_id=first_school.id, student_id=first_student.id,
+        amount=5, currency="USD", method="cash", reference="BANK-REF-1",
+    ))
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+    db_session.rollback()
+
+
+def test_payment_cannot_allocate_twice_to_same_invoice(db_session):
+    school = School(code="PAY006", name="Allocation Uniqueness School")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-ALLOC-1",
+        first_name="Allocation", last_name="Student", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-ALLOC-INV", currency="USD", total=20,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    payment = Payment(
+        school_id=school.id, student_id=student.id,
+        amount=10, currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    db_session.add(PaymentAllocation(
+        school_id=school.id, payment_id=payment.id,
+        invoice_id=invoice.id, amount=5,
+    ))
+    db_session.commit()
+    db_session.add(PaymentAllocation(
+        school_id=school.id, payment_id=payment.id,
+        invoice_id=invoice.id, amount=5,
+    ))
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+    db_session.rollback()
