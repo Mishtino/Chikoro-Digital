@@ -365,3 +365,74 @@ def report_card(student_id: int, term_id: Optional[int] = None, principal: Supab
         result.append({"subject_id": subject_id, "subject": group["name"], "average": round(avg, 2), "assessments": [{"name": a, "score": s, "max": mx} for a, s, mx, _ in items]})
     return {"student_id": student.id, "student_number": student.student_number, "name": f"{student.first_name} {student.last_name}", "subjects": result}
 
+@router.get("/report-card/{student_id}/pdf")
+def download_report_card_pdf(
+    student_id: int,
+    term_id: Optional[int] = Query(None),
+    principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')),
+    db: Session = Depends(get_db),
+):
+    """Generate a downloadable PDF using the same school and class checks as the JSON report card."""
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+    data = report_card(student_id, term_id, principal, db)
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+        title=f"Report card - {data['student_number']}",
+        author="Chikoro Digital",
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("CHIKORO DIGITAL", styles["Title"]),
+        Paragraph("STUDENT REPORT CARD", styles["Heading2"]),
+        Spacer(1, 5 * mm),
+        Paragraph(f"<b>Learner:</b> {data['name']}", styles["BodyText"]),
+        Paragraph(f"<b>Student number:</b> {data['student_number']}", styles["BodyText"]),
+    ]
+    if term_id is not None:
+        term = db.query(Term).filter(Term.id == term_id, Term.school_id == principal.school_id).first()
+        story.append(Paragraph(f"<b>Term:</b> {term.name}", styles["BodyText"]))
+    story.append(Spacer(1, 7 * mm))
+    table_data = [["Subject", "Average (%)", "Assessment", "Score"]]
+    for subject in data["subjects"]:
+        if not subject["assessments"]:
+            table_data.append([subject["subject"], f"{subject['average']:.2f}", "—", "—"])
+        else:
+            for index, assessment in enumerate(subject["assessments"]):
+                table_data.append([
+                    subject["subject"] if index == 0 else "",
+                    f"{subject['average']:.2f}" if index == 0 else "",
+                    assessment["name"],
+                    f"{assessment['score']:g} / {assessment['max']:g}",
+                ])
+    if len(table_data) == 1:
+        table_data.append(["No published results", "", "", ""])
+    table = Table(table_data, colWidths=[42 * mm, 28 * mm, 70 * mm, 30 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#B7C3D0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F6FA")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([table, Spacer(1, 8 * mm), Paragraph(
+        "This report contains published assessment results only.", styles["Italic"]
+    )])
+    document.build(story)
+    buffer.seek(0)
+    filename = f"report-card-{data['student_number']}" + (f"-term-{term_id}" if term_id else "") + ".pdf"
+    return StreamingResponse(
+        buffer, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
