@@ -15,14 +15,17 @@ A replacement runtime identity is required, but changing the connection string b
 
 ## Read-only live observations
 
-- The current database role is `postgres`: `rolsuper = false`, `rolbypassrls = true`.
+- The current database role is `postgres`: `rolsuper = false`, `rolbypassrls = true`, `rolcreatedb = true`, and `rolcreaterole = true`.
+- The built-in `service_role` is also `rolbypassrls = true` (and is non-login here); it is not an acceptable replacement. The `authenticator` login role can assume `anon`, `authenticated`, and `service_role`; the new API runtime must not inherit any of these elevated paths.
 - All 21 public base tables have RLS enabled; none currently has FORCE ROW LEVEL SECURITY.
 - Only `public.profiles` has a policy, for `SELECT` by `authenticated` where `auth.uid() = id`.
 - The other 20 public tables have no policies. A fresh grant audit also found that `anon` has no table-level DML privileges on any public base table, and `authenticated` has table-level access only to `profiles` (SELECT); neither role has CREATE on the public schema. This is fail-closed for browser Data API access, but it also means a normal non-bypass runtime role cannot yet serve the existing API.
 - The `public` schema currently grants CREATE to `postgres`; the API runtime must not receive CREATE, ownership, ALTER, DROP, TRUNCATE, TRIGGER, or REFERENCES privileges.
-- The API performs read-only lookups in `auth.users` for verified email and account activation. It must not receive broad write privileges on the Auth schema.
+- The API currently performs read-only lookups in `auth.users` for bootstrap and student/parent activation. Prefer the Supabase Auth user/Admin API for these identity checks so the runtime does not need direct `auth.users` access.
 - The only trigger discovered in `public`/ `auth` is `auth.users` AFTER INSERT calling `private.handle_new_auth_user()`. That function is SECURITY DEFINER, owned by `postgres`, and uses `search_path = pg_catalog, public`; it inserts a pending profile. The API runtime should not receive access to the `private` schema or EXECUTE rights on this trigger function.
 - The background worker is currently a placeholder and does not yet query the database. It must not be granted production data access until its real jobs are implemented and inventoried.
+- The current SQLAlchemy `get_db()` dependency does not set JWT claims or tenant context. `get_supabase_principal()` verifies the token and resolves a profile, but a staged no-bypass design must set verified `auth.uid()` context before that profile lookup and reapply context after each transaction restart.
+- Paynow webhook has no Supabase principal, while reconciliation is a cross-school platform-owner operation. These need separate, narrowly scoped policies/identities; they must not be treated as normal school requests.
 
 ## Public application tables
 
@@ -36,7 +39,7 @@ SQLAlchemy models cover the school, user, student/contact, fee, results, audit, 
 
 1. Create a dedicated runtime role, separate from `postgres`, `service_role`, `authenticated`, and `anon`. It must not be a member of any elevated role and must have `rolsuper = false` and `rolbypassrls = false`.
 2. Keep ownership and migration privileges with the migration/admin identity. The runtime role must not own application tables or schemas.
-3. Grant only `USAGE` on the required schema(s), table-level DML required by the verified API matrix, and `USAGE`/ `SELECT` on only the sequences used by inserts. Do not use blanket ALL privileges as the final grant design.
+3. Grant only `USAGE` on the required schema(s), table-level DML required by the verified API matrix, and `USAGE`/ `SELECT` on only the sequences used by inserts. Do not use blanket ALL privileges as the final grant design. Do not substitute Supabase's built-in `service_role`, because it bypasses RLS.
 4. For `auth.users`, grant only the minimum read access required for verified account activation. Do not grant INSERT, UPDATE, DELETE, or access to unrelated Auth tables.
 5. Design server-side tenant context and RLS policies before using a non-BYPASSRLS role. Context must be set only after Supabase JWT verification and trusted profile resolution. Policies must distinguish school-scoped users from Vortex platform roles and protect every tenant-owned table, including joins and payment allocations.
 6. Keep `profiles` and guardian-link access especially narrow. Platform identity lookups and bootstrap flows must be explicitly represented in the access design.
