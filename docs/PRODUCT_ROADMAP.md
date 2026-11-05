@@ -59,9 +59,9 @@ A secure, multi-tenant school management and digital learning platform operated 
 ### Teaching workspace
 - Assigned classes and subjects only.
 - Attendance capture and correction history.
-- Assessment entry, moderation/approval and report-card publishing.
+- Assessment entry, moderation/approval and report-card publishing. Teacher report-card access is restricted to currently assigned classes.
 - Assignment creation, resources and feedback.
-- Class performance analytics.
+- Class performance analytics: a feature-branch endpoint and school leadership dashboard now aggregate published marks by class and subject, with learner counts, average percentage and a 50% pass-rate indicator. Teachers are restricted to currently assigned classes; draft/approved marks and inactive learners are excluded. Results are capped at 500 class/subject groups.
 
 ### Bursar and finance workspace
 - Fee structures and student invoices.
@@ -134,7 +134,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 ### Core school operations
 6. Student records, classes, subjects, staff and attendance.
 7. Fees, invoices, payments, receipts and reconciliation.
-8. Examinations, grading, report cards and academic analytics.
+8. Examinations, grading, report cards and academic analytics (class performance dashboard is implemented on the feature branch; staging/CI validation remains required).
 9. Parent/student dashboards, timetables, assignments and learning materials.
 
 ### Platform operations and growth
