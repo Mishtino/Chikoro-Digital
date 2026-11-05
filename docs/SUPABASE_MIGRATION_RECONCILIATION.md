@@ -102,3 +102,8 @@ It adds and validates only the `profiles_role_check` constraint. It does not rec
 ## Migration quarantine safeguard — 5 November 2026
 
 The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. This prevents a routine Supabase CLI migration push from treating those unreconciled drafts as pending production migrations. `supabase/migrations/README.md` explicitly blocks pushes until the original four live SQL definitions are recovered. The proposed role allow-list SQL remains outside the standard migration path. This is a repository safety measure only; it does not alter the live Supabase migration ledger or database.
+
+
+## Financial uniqueness proposal — 5 November 2026
+
+Additional read-only checks found zero duplicate non-NULL payment references and zero duplicate `(payment_id, invoice_id)` allocation pairs. The repository models now declare matching uniqueness constraints. A staging-only SQL proposal is stored at `supabase/proposed_migrations/20261105_add_financial_uniqueness_backstops.sql`; it aborts on pre-existing duplicates or constraints and then adds school-scoped payment reference uniqueness and per-payment/per-invoice allocation uniqueness. It has not been applied. Review table locks and staging behaviour before any production rollout.
