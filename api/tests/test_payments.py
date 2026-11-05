@@ -343,6 +343,35 @@ def test_voiding_a_payment_twice_is_rejected(client, db_session):
     assert second.json()["detail"] == "Already voided"
 
 
+def test_school_owner_cannot_void_another_schools_payment(client, db_session):
+    own = School(code="PAY012", name="Void Scope Own School")
+    other = School(code="PAY013", name="Void Scope Other School")
+    db_session.add_all([own, other])
+    db_session.flush()
+    student = Student(
+        school_id=other.id, student_number="PAY-VOID-FOREIGN",
+        first_name="Foreign", last_name="Payment", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    payment = Payment(
+        school_id=other.id, student_id=student.id, amount=5,
+        currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(own.id)
+
+    response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "Unauthorized cross-school attempt"},
+    )
+
+    assert response.status_code == 404
+    db_session.refresh(payment)
+    assert payment.voided is False
+
+
 def test_payment_reads_reject_mismatched_school_filter(client, db_session):
     school = School(code="PAY008", name="Payment Tenant Scope")
     other_school = School(code="PAY009", name="Other Payment Tenant")
