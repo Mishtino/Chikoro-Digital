@@ -78,6 +78,8 @@ def test_browser_url_accepts_known_paynow_hosts(url):
 
 @pytest.mark.parametrize("url", [
     "https://checkout.paynow.co.zw/Payment/123",
+    "https://paynow.co.zw/Payment/123",
+    "https://secure.paynow.co.zw/Payment/123",
     "https://paynow.co.zw.evil.example/Payment/123",
     "http://www.paynow.co.zw/Payment/123",
     "https://user@www.paynow.co.zw/Payment/123",
