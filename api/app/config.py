@@ -62,4 +62,5 @@ def validate_production_settings(config: Settings) -> None:
         raise RuntimeError("Unsafe production configuration: " + "; ".join(errors))
 
 
-settings = Settings()\nvalidate_production_settings(settings)
+settings = Settings()
+validate_production_settings(settings)
