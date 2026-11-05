@@ -159,6 +159,8 @@ def list_marks(
     principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')),
     db: Session = Depends(get_db),
 ):
+    if principal.is_admin or principal.role not in {"owner", "headmaster", "teacher"}:
+        raise HTTPException(status_code=403, detail="School academic access required")
     sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
