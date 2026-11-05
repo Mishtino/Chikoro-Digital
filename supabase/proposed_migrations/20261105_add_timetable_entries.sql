@@ -54,6 +54,7 @@ CREATE INDEX IF NOT EXISTS ix_timetable_entries_teacher
     ON public.timetable_entries (school_id, teacher_user_id, day_of_week);
 
 ALTER TABLE public.timetable_entries ENABLE ROW LEVEL SECURITY;
+REVOKE ALL PRIVILEGES ON TABLE public.timetable_entries FROM anon, authenticated;
 
 -- No browser-facing policies are granted. API-side tenant authorization
 -- remains mandatory; browser roles remain denied by default.
