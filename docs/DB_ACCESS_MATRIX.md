@@ -122,3 +122,19 @@ This addendum records a second static pass over the route decorators and explici
 - [ ] Confirm auth bootstrap and activation lookups can be moved to Supabase Auth Admin API.
 - [ ] Test each command under a no-BYPASSRLS staging role with tenant and role-negative cases.
 - [ ] Generate least-privilege grants only after the above review.
+
+
+## New school operations tables — 5 November 2026
+
+The following proposed tables are now represented in API models and routers. Their SQL remains in `supabase/proposed_migrations/` and has not been applied. These are candidate API-runtime privileges only; do not grant them until the no-BYPASSRLS runtime design is implemented and validated.
+
+| Table | Candidate API operations | Scope / notes |
+|---|---|---|
+| `attendance_sessions` | SELECT, INSERT, UPDATE | School-scoped daily class registers; submitted registers are immutable through API. |
+| `attendance_records` | SELECT, INSERT, UPDATE | School, session and student are bound by composite foreign keys; status changes only while session is draft. |
+| `timetable_entries` | SELECT, INSERT, DELETE | School-scoped term/class periods; only owner/headmaster create/remove; teacher reads are assignment-scoped. |
+| `class_teacher_assignments` | SELECT, INSERT, UPDATE | School-scoped teacher/class assignments; soft removal via `is_active`, no hard delete route. |
+
+New model-level composite unique keys on `users(school_id,id)`, `students(school_id,id)`, `terms(school_id,id)` and `subjects(school_id,id)` support same-school composite foreign keys. The corresponding constraints are staging-only proposals, not live database guarantees yet.
+
+Teacher authorization now depends on `class_teacher_assignments`: student directory reads/lookups, mark entry and attendance are limited to assigned classes; timetable reads are limited to assigned classes or periods assigned directly to the teacher. A teacher without assignments receives no class roster. Class names currently derive from `students.form`; a normalized class catalogue remains future work.
