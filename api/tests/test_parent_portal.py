@@ -391,8 +391,8 @@ def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
     db_session.add_all(contacts)
     db_session.flush()
 
-    # This temporary table mirrors the live guardian_links columns used by
-    # _parent_student_ids without needing a paid Supabase staging branch.
+    # This attached SQLite table mirrors the live guardian_links columns
+    # used by _parent_student_ids without a paid Supabase staging branch.
     # SQLite's attached "public" schema mirrors the schema-qualified
     # table reference used by the production PostgreSQL query.
     db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
@@ -407,7 +407,7 @@ def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
         )
     """))
     db_session.execute(text("""
-        INSERT INTO guardian_links
+        INSERT INTO public.guardian_links
             (profile_id, contact_id, school_id, is_active, verified_at)
         VALUES
             (:profile, :valid_contact, :school, true, '2026-11-05T10:00:00Z'),
