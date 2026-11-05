@@ -346,3 +346,96 @@ def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_se
     denied = client.get("/portal/parent/children/999999/report-card.pdf")
     assert denied.status_code == 404
 
+
+
+def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
+    db_session, seed_two_schools
+):
+    """Exercise the real guardian-link SQL against same-school contact/learner rows."""
+    from sqlalchemy import text
+    from app.models.student import Contact
+
+    school = seed_two_schools["s1"]
+    other_school = seed_two_schools["s2"]
+    profile_id = uuid4()
+
+    valid = Student(
+        school_id=school.id, student_number="GL-VALID-001",
+        first_name="Valid", last_name="Learner", status="active",
+    )
+    inactive_learner = Student(
+        school_id=school.id, student_number="GL-INACTIVE-001",
+        first_name="Inactive", last_name="Learner", status="active",
+    )
+    unverified_learner = Student(
+        school_id=school.id, student_number="GL-UNVERIFIED-001",
+        first_name="Unverified", last_name="Learner", status="active",
+    )
+    other_school_learner = Student(
+        school_id=other_school.id, student_number="GL-OTHER-SCHOOL-001",
+        first_name="Other", last_name="School", status="active",
+    )
+    db_session.add_all([valid, inactive_learner, unverified_learner, other_school_learner])
+    db_session.flush()
+
+    contacts = [
+        Contact(school_id=school.id, student_id=valid.id, name="Verified guardian",
+                relationship="parent", is_primary=True),
+        Contact(school_id=school.id, student_id=inactive_learner.id, name="Inactive guardian",
+                relationship="parent", is_primary=True),
+        Contact(school_id=school.id, student_id=unverified_learner.id, name="Unverified guardian",
+                relationship="parent", is_primary=True),
+        Contact(school_id=other_school.id, student_id=other_school_learner.id,
+                name="Other school guardian", relationship="parent", is_primary=True),
+    ]
+    db_session.add_all(contacts)
+    db_session.flush()
+
+    # This temporary table mirrors the live guardian_links columns used by
+    # _parent_student_ids without needing a paid Supabase staging branch.
+    db_session.execute(text("""
+        CREATE TEMP TABLE guardian_links (
+            profile_id TEXT NOT NULL,
+            contact_id INTEGER NOT NULL,
+            school_id INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL,
+            verified_at TEXT
+        )
+    """))
+    db_session.execute(text("""
+        INSERT INTO guardian_links
+            (profile_id, contact_id, school_id, is_active, verified_at)
+        VALUES
+            (:profile, :valid_contact, :school, true, '2026-11-05T10:00:00Z'),
+            (:profile, :inactive_contact, :school, false, '2026-11-05T10:00:00Z'),
+            (:profile, :unverified_contact, :school, true, NULL),
+            (:profile, :other_contact, :other_school, true, '2026-11-05T10:00:00Z')
+    """), {
+        "profile": str(profile_id),
+        "valid_contact": contacts[0].id,
+        "inactive_contact": contacts[1].id,
+        "unverified_contact": contacts[2].id,
+        "other_contact": contacts[3].id,
+        "school": school.id,
+        "other_school": other_school.id,
+    })
+    db_session.flush()
+
+    parent = SupabasePrincipal(
+        auth_user_id=profile_id, user_id=9400, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    assert portal._parent_student_ids(parent, db_session) == [valid.id]
+    assert portal._parent_student(parent, valid.id, db_session).id == valid.id
+
+    from fastapi import HTTPException
+    import pytest
+    with pytest.raises(HTTPException) as inactive_link:
+        portal._parent_student(parent, inactive_learner.id, db_session)
+    assert inactive_link.value.status_code == 404
+    with pytest.raises(HTTPException) as unverified_link:
+        portal._parent_student(parent, unverified_learner.id, db_session)
+    assert unverified_link.value.status_code == 404
+    with pytest.raises(HTTPException) as cross_school_link:
+        portal._parent_student(parent, other_school_learner.id, db_session)
+    assert cross_school_link.value.status_code == 404
