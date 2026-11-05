@@ -18,7 +18,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Student workspace
 - Personal dashboard: school, class, term, attendance, upcoming deadlines, announcements.
-- Academic record: subject marks, grades, teacher feedback, term comparisons, downloadable report cards.
+- Academic record: subject marks, grades, teacher feedback, term comparisons and downloadable report cards. Student self-service PDF downloads are implemented on the feature branch and return only the authenticated learner's published marks.
 - Timetable and school calendar.
 - Assignments: instructions, due dates, attachments, submissions and feedback.
 - Learning resources: subject folders, notes and revision material.
@@ -31,7 +31,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 - Attendance history and summaries now have a backend endpoint and parent dashboard view. Only submitted registers for active, verified linked learners are returned; date filters are supported and the summary counts the full matching history while the visible register is capped at the latest 100 records.
 - Per-child overview with clear learner switching.
 - Attendance and absence alerts.
-- Results, report cards and teacher feedback.
+- Results, report cards and teacher feedback. Verified parents can download a PDF for the selected linked learner; the server re-checks the active guardian relationship before returning published marks.
 - Fee balances, itemised statements, receipts and secure payments.
 - School announcements, event calendar and secure parent-teacher conversations. Parent messaging is implemented on the feature branch: parents can start threads only with teachers actively assigned to the verified learner's class; teachers can read/reply only to their own assigned-class threads. Messages are private in-app records; external email/SMS/push delivery is not configured.
 - Guardian relationships require verified email and school-issued, one-time activation credentials.
@@ -58,7 +58,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Teaching workspace
 - Assigned classes and subjects only.
-- Downloadable report-card PDFs are implemented on the feature branch for authorised school leadership and currently assigned teachers. PDFs are generated server-side from published marks only; learner and school scope checks are shared with the JSON report-card endpoint. Student/parent self-service PDF downloads remain pending.
+- Downloadable report-card PDFs are implemented on the feature branch for authorised school leadership and currently assigned teachers. PDFs are generated server-side from published marks only; learner and school scope checks are shared with the JSON report-card endpoint. Student and verified-parent self-service PDF downloads are now implemented on the feature branch, with API regression tests for successful downloads and linked-child isolation.
 - Attendance capture and correction history.
 - Assessment entry, moderation/approval and report-card publishing. Teacher report-card access is restricted to currently assigned classes.
 - Assignment creation, resources and feedback.
