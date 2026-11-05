@@ -11,11 +11,11 @@ from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.timetable import TimetableEntry
 from app.models.class_assignment import ClassTeacherAssignment
 from app.models.parent_teacher_message import ParentTeacherConversation, ParentTeacherMessage
-from app.models.homework import HomeworkAssignment, HomeworkSubmission
+from app.models.homework import HomeworkAssignment, HomeworkSubmission, HomeworkAttachment
 
 __all__ = [
     "School", "User", "AuditLog", "Student", "Contact", "Term", "FeeItem",
     "FeeStructure", "FeeStructureItem", "Invoice", "InvoiceLine", "Payment",
-    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry", "ClassTeacherAssignment", "ParentTeacherConversation", "ParentTeacherMessage", "HomeworkAssignment", "HomeworkSubmission",
+    "PaymentAllocation", "Receipt", "PaynowAttempt", "Subject", "Assessment", "Mark", "Notification", "AttendanceSession", "AttendanceRecord", "TimetableEntry", "ClassTeacherAssignment", "ParentTeacherConversation", "ParentTeacherMessage", "HomeworkAssignment", "HomeworkSubmission", "HomeworkAttachment",
 ]
 
