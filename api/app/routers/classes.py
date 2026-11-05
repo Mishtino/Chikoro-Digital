@@ -81,8 +81,16 @@ def list_assignments(
     sid = _school(principal, school_id)
     query = (
         db.query(ClassTeacherAssignment, User)
-        .join(User, User.id == ClassTeacherAssignment.teacher_user_id)
+        .join(
+            User,
+            (User.id == ClassTeacherAssignment.teacher_user_id)
+            & (User.school_id == ClassTeacherAssignment.school_id),
+        )
         .filter(
+            User.school_id == sid,
+            User.role == "teacher",
+            User.is_active.is_(True),
+            User.is_admin.is_(False),
             ClassTeacherAssignment.school_id == sid,
             ClassTeacherAssignment.is_active.is_(True),
         )
