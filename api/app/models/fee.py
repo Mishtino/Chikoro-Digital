@@ -22,6 +22,8 @@ class Term(Base):
     is_current = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
 
+    __table_args__ = (UniqueConstraint("school_id", "id", name="uq_terms_school_id_id"),)
+
 
 class FeeItem(Base):
     __tablename__ = "fee_items"
