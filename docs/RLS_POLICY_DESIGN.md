@@ -136,3 +136,12 @@ References: [Supabase RLS guide](https://supabase.com/docs/guides/database/postg
 
 The current webhook's callback form is not a trusted identity. It is only a signal to poll Paynow. The signed provider poll response, verified against the school's integration key and bound to the stored merchant reference, is authoritative. RLS design must not permit a callback-supplied reference/status to select a privileged tenant or write a payment directly. Reconciliation is a separate owner-authorized cross-school process and must receive only the minimum access needed to poll and settle pending attempts.
 
+
+
+### New attendance, timetable and class assignment tables — 5 November 2026
+
+Proposed tables `attendance_sessions`, `attendance_records`, `timetable_entries` and `class_teacher_assignments` are being developed outside the applied migration path. Their proposed migrations enable RLS but deliberately add no browser-facing policies; browser roles therefore remain denied by default. The API currently uses the Render `postgres` role with `BYPASSRLS=true`, so the application-level school and class checks remain the effective boundary until a dedicated least-privilege runtime role and RLS context lifecycle are implemented.
+
+Composite foreign keys are proposed to bind attendance records to their session and student in the same school, bind attendance actors to the school, bind timetable entries to school-owned terms/subjects/teachers/creators, and bind class assignments to school-owned teachers/assigning actors. The supporting composite unique constraints on users, students, terms and subjects are also proposed only.
+
+Teacher authorization is now class-assignment-aware in the API: a teacher sees only assigned-class learners and attendance registers, can enter marks only for assigned classes, and sees timetable periods for assigned classes or periods assigned directly to them. These checks are defense in depth and do not replace the future database policy layer. Staging must test both API tenant context and direct browser-role denial before release.
