@@ -89,8 +89,39 @@ ALTER TABLE public.payments
     ADD CONSTRAINT uq_payment_reference_per_school
     UNIQUE (school_id, reference);
 
+ALTER TABLE public.invoices
+    ADD CONSTRAINT uq_invoice_school_id_id UNIQUE (school_id, id);
+
+ALTER TABLE public.payments
+    ADD CONSTRAINT uq_payment_school_id_id UNIQUE (school_id, id);
+
 ALTER TABLE public.payment_allocations
     ADD CONSTRAINT uq_payment_allocation_per_invoice
     UNIQUE (payment_id, invoice_id);
+
+DO $
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM public.payment_allocations pa
+        JOIN public.payments p ON p.id = pa.payment_id
+        JOIN public.invoices i ON i.id = pa.invoice_id
+        WHERE pa.school_id <> p.school_id
+           OR pa.school_id <> i.school_id
+    ) THEN
+        RAISE EXCEPTION 'Cross-school payment allocations exist; resolve before adding tenant foreign keys';
+    END IF;
+END
+$;
+
+ALTER TABLE public.payment_allocations
+    ADD CONSTRAINT fk_payment_allocation_payment_school
+    FOREIGN KEY (school_id, payment_id)
+    REFERENCES public.payments (school_id, id);
+
+ALTER TABLE public.payment_allocations
+    ADD CONSTRAINT fk_payment_allocation_invoice_school
+    FOREIGN KEY (school_id, invoice_id)
+    REFERENCES public.invoices (school_id, id);
 
 COMMIT;
