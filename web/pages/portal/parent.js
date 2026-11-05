@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import ParentHomeworkPanel from '../../components/ParentHomeworkPanel';
 
 export default function ParentPortal() {
   const router = useRouter();
@@ -298,6 +299,8 @@ export default function ParentPortal() {
           </form>
         </div>}
       </section>}
+
+      {!!selectedId && <section className="card" style={{ marginTop: 18 }}><ParentHomeworkPanel studentId={selectedId} /></section>}
 
       {results && <section className="card" style={{ marginTop: 18 }}>
         <h2>Published results</h2>
