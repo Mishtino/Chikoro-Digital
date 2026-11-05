@@ -163,7 +163,7 @@ def _student_usd_balance(db: Session, school_id: int, student_id: int):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
@@ -175,7 +175,7 @@ def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
 @router.post("/settings")
 def update_settings(payload: PaynowSettingsUpdate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+    if not principal.is_platform_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
     school = db.get(School, sid)
     if school is None:
@@ -229,7 +229,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         if student is None or student.status != "active":
             raise HTTPException(status_code=404, detail="Active student not found")
         sid = student.school_id
-        if not principal.is_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
+        if not principal.is_platform_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
             raise HTTPException(status_code=403, detail="Access denied")
     elif principal.role in ("student", "parent"):
         student = db.query(Student).filter(Student.portal_user_id == principal.user_id).first()
@@ -436,7 +436,7 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/attempts")
 def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     attempts = db.query(PaynowAttempt).filter(PaynowAttempt.school_id == sid).order_by(PaynowAttempt.id.desc()).all()
