@@ -112,6 +112,36 @@ def _conversation_json(db, conversation, student):
     }
 
 
+
+@router.get("/teachers")
+def available_teachers(
+    student_id: int,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    _school_principal(principal)
+    if principal.role != "parent":
+        raise HTTPException(status_code=403, detail="Parent portal only")
+    student = _parent_student(principal, student_id, db)
+    if not student.form:
+        return {"teachers": []}
+    from app.models.class_assignment import ClassTeacherAssignment
+    rows = db.query(User).join(
+        ClassTeacherAssignment,
+        (ClassTeacherAssignment.teacher_user_id == User.id)
+        & (ClassTeacherAssignment.school_id == User.school_id),
+    ).filter(
+        User.school_id == student.school_id,
+        User.role == "teacher",
+        User.is_active.is_(True),
+        User.is_admin.is_(False),
+        ClassTeacherAssignment.school_id == student.school_id,
+        ClassTeacherAssignment.class_name == student.form,
+        ClassTeacherAssignment.is_active.is_(True),
+    ).order_by(User.full_name).all()
+    return {"teachers": [{"id": row.id, "name": row.full_name} for row in rows]}
+
+
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
 def create_conversation(
     payload: ConversationCreate,
