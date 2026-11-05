@@ -829,3 +829,90 @@ def test_initiation_rejects_unverified_provider_response_before_returning_checko
     assert attempt.status == "failed"
     assert attempt.browser_url is None
     assert attempt.poll_url is None
+
+
+def test_unverified_callback_cannot_cancel_attempt_or_overwrite_provider_reference(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN018", name="Unverified Callback State",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=school.id, reference="PN-CALLBACK-UNVERIFIED",
+        amount=12, currency="USD", status="sent",
+        poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=callback-test",
+        paynow_reference="provider-reference-before",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        paynow, "poll_transaction",
+        lambda _url, _key: {
+            "Status": "Pending",
+            "reference": "PN-CALLBACK-UNVERIFIED",
+            "hash_verified": False,
+        },
+    )
+    response = client.post(
+        "/paynow/webhook",
+        data={
+            "reference": attempt.reference,
+            "status": "Cancelled",
+            "paynowreference": "attacker-controlled-reference",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "provider status could not be verified"
+    db_session.refresh(attempt)
+    assert attempt.status == "unverified"
+    assert attempt.paynow_reference == "provider-reference-before"
+    assert db_session.query(Payment).count() == 0
+
+
+def test_reconcile_does_not_accept_unsigned_failed_status(
+    client, db_session, monkeypatch
+):
+    from app.services import paynow as paynow_service
+
+    school = School(
+        code="PN019", name="Unsigned Reconcile Status",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=school.id, reference="PN-RECONCILE-UNSIGNED",
+        amount=8, currency="USD", status="sent",
+        poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=reconcile-test",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=1, school_id=None,
+        role="owner", is_admin=True,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    monkeypatch.setattr(
+        paynow_service, "poll_transaction",
+        lambda _url, _key: {
+            "Status": "Failed",
+            "reference": "PN-RECONCILE-UNSIGNED",
+            "hash_verified": False,
+        },
+    )
+
+    response = client.post("/paynow/reconcile")
+
+    assert response.status_code == 200
+    assert response.json() == {"updated": 1}
+    db_session.refresh(attempt)
+    assert attempt.status == "unverified"
+    assert db_session.query(Payment).count() == 0
