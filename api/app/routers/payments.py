@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.deps_supabase import SupabasePrincipal, require_supabase_roles
@@ -91,13 +92,18 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         )
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
+    reference = payload.reference.strip() if payload.reference else None
+    if reference and db.query(Payment.id).filter(
+        Payment.school_id == sid, Payment.reference == reference
+    ).first():
+        raise HTTPException(status_code=409, detail="Payment reference already exists for this school")
     payment = Payment(
         school_id=sid,
         student_id=payload.student_id,
         amount=amount,
         currency=payload.currency.upper(),
         method=payload.method,
-        reference=payload.reference,
+        reference=reference,
         received_by_user_id=principal.user_id,
     )
     db.add(payment)
@@ -109,7 +115,20 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         receipt_number=next_receipt_number(db, sid),
     )
     db.add(receipt)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        error_text = str(getattr(exc, "orig", exc))
+        if (
+            "uq_payment_reference_per_school" in error_text
+            or "payments.school_id, payments.reference" in error_text
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Payment reference already exists for this school",
+            ) from exc
+        raise
     db.refresh(payment)
     db.refresh(receipt)
     write_audit(db, principal, "payment.record", "payment", payment.id, {"amount": float(payload.amount), "method": payload.method}, school_id=sid)
