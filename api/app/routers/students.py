@@ -162,7 +162,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         guardian_contact_id = contact.id
 
     try:
-        db.commit()
+        db.flush()
     except IntegrityError:
         db.rollback()
         # The database uniqueness constraint remains the final safeguard if a
