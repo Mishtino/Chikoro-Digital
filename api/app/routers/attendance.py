@@ -94,7 +94,7 @@ def create_session(
     )
     db.add(session)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="An attendance register already exists for this class and date")
