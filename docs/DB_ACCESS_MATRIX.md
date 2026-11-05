@@ -138,3 +138,8 @@ The following proposed tables are now represented in API models and routers. The
 New model-level composite unique keys on `users(school_id,id)`, `students(school_id,id)`, `terms(school_id,id)` and `subjects(school_id,id)` support same-school composite foreign keys. The corresponding constraints are staging-only proposals, not live database guarantees yet.
 
 Teacher authorization now depends on `class_teacher_assignments`: student directory reads/lookups, mark entry and attendance are limited to assigned classes; timetable reads are limited to assigned classes or periods assigned directly to the teacher. A teacher without assignments receives no class roster. Class names currently derive from `students.form`; a normalized class catalogue remains future work.
+
+
+## Platform identity separation hardening — 5 November 2026
+
+The shared `require_supabase_roles(...)` dependency now rejects every `is_admin` principal instead of treating the legacy admin flag as a blanket role bypass. School workflows require a non-admin, school-scoped role explicitly listed by the endpoint. Vortex platform operations must use the dedicated `/platform/*` permission checks; the one cross-school Paynow reconciliation endpoint independently requires `principal.is_platform_admin`. This prevents a platform identity or a mismatched legacy admin flag from inheriting school-owner, bursar, teacher or student permissions through shared dependencies.
