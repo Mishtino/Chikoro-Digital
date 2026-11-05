@@ -14,6 +14,12 @@ The overview returns:
 
 The finance summary excludes void invoices and allocations from voided payments. It is read-only and is not a substitute for invoice-level finance permissions.
 
+## Finance workspace
+
+The `/school-admin/finance` page is available to school owners, headmasters and bursars. It reads only the authenticated school's learner, invoice and payment records. It shows open invoices, balances by currency, and recent payments; authorized staff can record a manual cash, bank or mobile-money payment. Allocation, overpayment prevention, duplicate-reference checks and receipt numbering are enforced by the API. The page does not directly initiate Paynow transactions.
+
+Bursar sign-ins route directly to the finance workspace. Bursars are not granted access to the owner/headmaster staff directory or school overview.
+
 ## Learner management
 
 The `/school-admin/students` page supports:
