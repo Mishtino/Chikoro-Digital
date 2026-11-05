@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,11 @@ from app.models.audit import AuditLog
 from app.models.school import School
 from app.models.user import User
 from app.services.auth import hash_password
-from app.services.school_staff_access import authorize_school_staff_write
+from app.services.school_staff_access import (
+    authorize_school_staff_role_change,
+    authorize_school_staff_write,
+    ensure_not_self_deactivation,
+)
 from app.services.school_staff_onboarding import (
     link_pending_staff_profile,
     school_staff_role_schema_ready,
@@ -122,3 +126,137 @@ def invite_school_staff(
         "school_id": school_id,
         "activation_pending": True,
     }
+
+class SchoolStaffRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["headmaster", "bursar", "teacher"]
+
+
+class SchoolStaffStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_active: bool
+
+
+def _require_staff_lifecycle_ready(db: Session):
+    if not settings.school_staff_lifecycle_enabled:
+        raise HTTPException(status_code=503, detail="School staff lifecycle management is not enabled")
+    if not school_staff_role_schema_ready(db):
+        raise HTTPException(status_code=503, detail="The validated staff-role migration is required")
+
+
+def _lock_linked_staff(db: Session, principal: SupabasePrincipal, user_id: int):
+    if principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School administrator access required")
+    target = (
+        db.query(User)
+        .filter(User.id == user_id, User.school_id == principal.school_id)
+        .with_for_update()
+        .first()
+    )
+    if target is None or target.is_admin or target.role not in {"headmaster", "bursar", "teacher"}:
+        raise HTTPException(status_code=404, detail="Managed school staff account not found")
+    profile = db.execute(text("""
+        SELECT id, role, school_id, is_active
+        FROM public.profiles
+        WHERE local_user_id = :local_user_id
+        FOR UPDATE
+    """), {"local_user_id": target.id}).mappings().first()
+    if (
+        profile is None
+        or profile["role"] != target.role
+        or profile["school_id"] != principal.school_id
+        or bool(profile["is_active"]) != bool(target.is_active)
+    ):
+        raise HTTPException(status_code=409, detail="Staff profile and school account are not consistently linked")
+    return target, profile
+
+
+@router.patch("/{user_id}/role")
+def change_school_staff_role(
+    user_id: int,
+    payload: SchoolStaffRoleRequest,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School administrator access required")
+    authorize_school_staff_role_change(principal, principal.school_id, payload.role)
+    _require_staff_lifecycle_ready(db)
+    if user_id == principal.user_id:
+        raise HTTPException(status_code=409, detail="You cannot change your own school administrator role")
+    target, profile = _lock_linked_staff(db, principal, user_id)
+    if target.role == payload.role:
+        return {"user_id": target.id, "role": target.role, "message": "No change required"}
+    school = db.query(School).filter(School.id == principal.school_id).with_for_update().first()
+    if school is None or school.status != "live":
+        raise HTTPException(status_code=409, detail="Staff role changes require an active school")
+    previous_role = target.role
+    result = db.execute(text("""
+        UPDATE public.profiles
+        SET role = :new_role, updated_at = now()
+        WHERE id = CAST(:auth_id AS uuid)
+          AND role = :old_role AND school_id = :school_id
+    """), {
+        "auth_id": str(profile["id"]), "new_role": payload.role,
+        "old_role": previous_role, "school_id": principal.school_id,
+    })
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Staff role changed concurrently; refresh and try again")
+    target.role = payload.role
+    db.add(AuditLog(
+        school_id=principal.school_id,
+        actor_user_id=principal.user_id,
+        action="school.staff.role_changed",
+        entity_type="school_staff",
+        entity_id=str(profile["id"]),
+        details={"from_role": previous_role, "to_role": payload.role},
+    ))
+    db.commit()
+    return {"user_id": target.id, "role": target.role, "message": "Staff role updated"}
+
+
+@router.patch("/{user_id}/status")
+def update_school_staff_status(
+    user_id: int,
+    payload: SchoolStaffStatusRequest,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School administrator access required")
+    _require_staff_lifecycle_ready(db)
+    target, profile = _lock_linked_staff(db, principal, user_id)
+    authorize_school_staff_write(principal, principal.school_id, target.role)
+    if not payload.is_active:
+        ensure_not_self_deactivation(principal.user_id, target.id)
+    if bool(target.is_active) == payload.is_active:
+        return {"user_id": target.id, "is_active": target.is_active, "message": "No change required"}
+    school = db.query(School).filter(School.id == principal.school_id).with_for_update().first()
+    if school is None or (payload.is_active and school.status != "live"):
+        raise HTTPException(status_code=409, detail="Staff activation requires an active school")
+    result = db.execute(text("""
+        UPDATE public.profiles
+        SET is_active = :is_active, updated_at = now()
+        WHERE id = CAST(:auth_id AS uuid)
+          AND role = :role AND school_id = :school_id
+          AND is_active = :previous_active
+    """), {
+        "auth_id": str(profile["id"]), "is_active": payload.is_active,
+        "role": target.role, "school_id": principal.school_id,
+        "previous_active": bool(target.is_active),
+    })
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Staff status changed concurrently; refresh and try again")
+    target.is_active = payload.is_active
+    db.add(AuditLog(
+        school_id=principal.school_id,
+        actor_user_id=principal.user_id,
+        action="school.staff.activated" if payload.is_active else "school.staff.deactivated",
+        entity_type="school_staff",
+        entity_id=str(profile["id"]),
+        details={"role": target.role, "from_active": not payload.is_active, "to_active": payload.is_active},
+    ))
+    db.commit()
+    return {"user_id": target.id, "is_active": target.is_active, "message": "Staff access enabled" if target.is_active else "Staff access disabled"}
