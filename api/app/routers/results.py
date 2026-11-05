@@ -149,7 +149,7 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
         else:
             db.add(Mark(school_id=sid, student_id=e.student_id, assessment_id=e.assessment_id, score=e.score, entered_by_user_id=principal.user_id))
         created += 1
-    db.commit()
+    db.flush()
     write_audit(db, principal, "marks.enter", "assessment", None, {"count": created}, school_id=sid)
     return {"saved": created}
 
