@@ -108,9 +108,8 @@ def create_assignment(
         published_at=datetime.now(timezone.utc).replace(tzinfo=None) if payload.publish else None,
     )
     db.add(assignment)
-    db.commit()
-    db.refresh(assignment)
-    write_audit(db, principal, "homework.assignment.create", "homework_assignment", assignment.id,
+    db.flush()
+    db.refresh(assignment)$3(db, principal, "homework.assignment.create", "homework_assignment", assignment.id,
                 {"class_name": assignment.class_name, "status": assignment.status}, school_id=sid)
     return {"id": assignment.id, "status": assignment.status}
 
@@ -202,7 +201,7 @@ def mark_submission(
     submission.status = "marked"
     submission.marked_by_user_id = principal.user_id
     submission.marked_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.commit()
+    db.flush()
     write_audit(db, principal, "homework.submission.mark", "homework_submission", submission.id,
                 {"has_score": payload.score is not None}, school_id=sid)
     return {"id": submission.id, "status": submission.status}
@@ -272,9 +271,8 @@ def submit_homework(
         answer_text=payload.answer_text,
     )
     db.add(submission)
-    db.commit()
-    db.refresh(submission)
-    write_audit(db, principal, "homework.submission.create", "homework_submission", submission.id,
+    db.flush()
+    db.refresh(submission)$3(db, principal, "homework.submission.create", "homework_submission", submission.id,
                 {"assignment_id": assignment.id}, school_id=student.school_id)
     return {"id": submission.id, "status": submission.status, "submitted_at": submission.submitted_at.isoformat()}
 
@@ -435,9 +433,8 @@ def create_homework_attachment_upload(
         status="pending",
     )
     db.add(attachment)
-    db.commit()
-    db.refresh(attachment)
-    write_audit(
+    db.flush()
+    db.refresh(attachment)$3(
         db, principal, "homework.attachment.upload_url", "homework_attachment",
         attachment.id, {"submission_id": submission.id, "size_bytes": payload.size_bytes},
         school_id=student.school_id,
@@ -480,7 +477,7 @@ def complete_homework_attachment_upload(
     ):
         raise HTTPException(status_code=422, detail="Uploaded file metadata does not match the request")
     attachment.status = "ready"
-    db.commit()
+    db.flush()
     write_audit(
         db, principal, "homework.attachment.complete", "homework_attachment",
         attachment.id, {"size_bytes": attachment.size_bytes}, school_id=student.school_id,
