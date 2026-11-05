@@ -167,11 +167,11 @@ export default function SchoolStudents() {
               <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{student.first_name} {student.last_name}</td>
               <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{student.form || '—'}</td>
               <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{student.status}</td>
-              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{student.activated ? 'Activated' : 'Not activated'}</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{!student.portal_enabled ? 'Not enabled' : student.activated ? 'Activated' : 'Pending activation'}</td>
               <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => beginEdit(student)} style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: 7, padding: '6px 9px', cursor: 'pointer' }}>Edit</button>
-                  {!student.activated && <button type="button" disabled={busyId === student.id} onClick={() => issuePin(student)} style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: 7, padding: '6px 9px', cursor: 'pointer' }}>Issue PIN</button>}
+                  {!student.activated && student.portal_enabled && <button type="button" disabled={busyId === student.id} onClick={() => issuePin(student)} style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: 7, padding: '6px 9px', cursor: 'pointer' }}>Issue PIN</button>}
                 </div>
               </td>
             </tr>)}</tbody>
