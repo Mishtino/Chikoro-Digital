@@ -931,3 +931,41 @@ def test_reconcile_does_not_accept_unsigned_failed_status(
     db_session.refresh(attempt)
     assert attempt.status == "unverified"
     assert db_session.query(Payment).count() == 0
+
+
+def test_signed_paynow_cancellation_status_is_accepted_from_provider_poll(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN020", name="Signed Cancellation Status",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    attempt = PaynowAttempt(
+        school_id=school.id, reference="PN-SIGNED-CANCEL",
+        amount=8, currency="USD", status="sent",
+        poll_url="https://www.paynow.co.zw/interface/checkpayment/?guid=signed-cancel",
+    )
+    db_session.add(attempt)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        paynow, "poll_transaction",
+        lambda _url, _key: {
+            "Status": "Cancelled",
+            "reference": "PN-SIGNED-CANCEL",
+            "hash_verified": True,
+        },
+    )
+
+    response = client.post(
+        "/paynow/webhook",
+        data={"reference": attempt.reference, "status": "Pending"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    db_session.refresh(attempt)
+    assert attempt.status == "cancelled"
