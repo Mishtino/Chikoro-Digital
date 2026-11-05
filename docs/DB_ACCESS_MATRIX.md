@@ -143,3 +143,43 @@ Teacher authorization now depends on `class_teacher_assignments`: student direct
 ## Platform identity separation hardening — 5 November 2026
 
 The shared `require_supabase_roles(...)` dependency now rejects every `is_admin` principal instead of treating the legacy admin flag as a blanket role bypass. School workflows require a non-admin, school-scoped role explicitly listed by the endpoint. Vortex platform operations must use the dedicated `/platform/*` permission checks; the one cross-school Paynow reconciliation endpoint independently requires `principal.is_platform_admin`. This prevents a platform identity or a mismatched legacy admin flag from inheriting school-owner, bursar, teacher or student permissions through shared dependencies.
+
+
+## Expanded route inventory — latest branch source pass (5 November 2026)
+
+The current branch contains 20 router modules (the earlier 13-router inventory is superseded). The following inventory records the route surface and model families to include in the final statement-level CRUD review. It does not infer grants from imports alone.
+
+| Router | Endpoint surface | Model/table families requiring CRUD review |
+|---|---|---|
+| `attendance.py` | Create/list sessions; read records; replace records; submit register | AttendanceSession, AttendanceRecord, Term, Student |
+| `classes.py` | List classes; list/create/delete teacher assignments | ClassTeacherAssignment, Student, School, User |
+| `homework.py` | Create/list assignments; list/mark submissions; student list/submit; parent child view; attachment upload/download URL and completion | HomeworkAssignment, HomeworkSubmission, HomeworkAttachment, Subject, Term, Student |
+| `parent_teacher.py` | List teachers; create/list conversations; read/send messages; close conversation | ParentTeacherConversation, ParentTeacherMessage, Student, User, ClassTeacherAssignment |
+| `school_admin.py` | School overview | School, Student, User, Term, Invoice, Payment, PaymentAllocation, Subject, Assessment, Mark |
+| `school_staff.py` | Capabilities; invite staff; change role/status | School, User, AuditLog |
+| `timetable.py` | List/create/delete timetable entries | TimetableEntry, Term, School, Subject, User |
+| `notifications.py` | List notifications; process endpoint (currently fails closed with 501) | Notification |
+| `results.py` | Subject/assessment/mark CRUD; approve/publish; analytics; report card and PDF | Subject, Assessment, Mark, Student, Term, Contact, Notification |
+| `students.py` | Create/list/read/update students; issue student/guardian activation PINs | Student, Contact, School, User |
+| `auth.py` | Bootstrap platform owner; activate school staff, parent and student identities; legacy login retired | profiles, users, students, contacts, guardian_links, audit_logs, schools, auth.users |
+| `fees.py`, `payments.py`, `paynow.py`, `portal.py`, `platform_*.py`, `schools.py`, `users.py` | Existing fee/payment/provider, learner/parent portal, platform staff/audit, school lifecycle and user-directory surfaces | See the router-to-table map above; retain their exceptional-path classification and verify every endpoint/write site. |
+
+### Route-level security controls that must be tested with database policies
+
+- **Attendance:** session ownership and teacher/class assignment must be enforced on create, read, record replacement and submit; changing a session ID must not expose another school's register.
+- **Class assignments:** only authorized school staff can assign a teacher, and the teacher and class must belong to the same school. Deletion must not permit cross-school assignment removal.
+- **Homework and attachments:** assignment visibility, submission ownership, marking authority, and attachment upload/download URL issuance must all be tenant- and learner-scoped. Signed storage URLs must not be issued for another student's object.
+- **Parent-teacher messaging:** a parent must have a verified active guardian link to the learner; the teacher must be assigned to that learner's class; conversation/message IDs must be checked against both parties and school on every operation.
+- **Timetable:** subject, teacher, class and term must all resolve to the same school. Read and delete routes must not trust a caller-supplied entry ID without tenant scoping.
+- **Results:** marks approval/publication and report-card/PDF endpoints need separate write/read permissions. A parent or student must see only published results for a linked learner.
+- **Staff lifecycle:** invitations and role/status changes must remain school-scoped, reject platform identities and prevent promotion to owner/admin outside the explicitly controlled Vortex platform lifecycle.
+- **Activation/bootstrap:** remain separate from ordinary authenticated school requests. No broad policy for `auth.users`, contacts, profiles or audit logs is acceptable as a shortcut.
+- **Payments and Paynow:** provider callbacks and cross-school reconciliation require dedicated server-side access paths; they must not be represented by an ordinary school-user policy.
+
+### Database staging status
+
+A live Supabase branch listing returned no development branches for project `xivzduvqpuqbecskxaoj`. A request to create `chikoro-security-staging` was stopped by the platform's cost-confirmation gate; no branch was created. Before proceeding, the organization and recurring branch cost must be presented and explicitly accepted. Supabase branch creation also starts from production migrations but does not copy production data, so representative synthetic tenant/payment data and test secrets must be seeded separately.
+
+### Immediate implementation decision
+
+Do not add blanket RLS policies or switch the Render database role based only on this inventory. The next safe implementation unit is the trusted SQLAlchemy transaction-context layer plus a narrow set of policy tests in an isolated staging branch, after cost approval and a reviewed endpoint/statement matrix. Keep all production objects and credentials unchanged.
