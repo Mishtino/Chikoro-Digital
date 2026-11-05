@@ -147,6 +147,8 @@ def parent_child_fee_status(student_id: int, principal: SupabasePrincipal = Depe
 @router.get("/parent/children/{student_id}/report-card")
 def parent_child_report_card(student_id: int, term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     student = _parent_student(principal, student_id, db)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Linked student not found")
     from app.models.results import Mark, Assessment, Subject
     q = db.query(Mark, Assessment, Subject).join(
         Assessment, Assessment.id == Mark.assessment_id
