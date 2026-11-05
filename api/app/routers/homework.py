@@ -226,7 +226,7 @@ def student_assignments(
         HomeworkAssignment.class_name == (student.form or ""),
         HomeworkAssignment.status == "published",
     ).order_by(HomeworkAssignment.due_at.asc(), HomeworkAssignment.id.desc()).limit(500).all()
-    return {"assignments": [
+    return {"attachments_enabled": settings.homework_attachments_enabled, "assignments": [
         {**_assignment_out(a, subject),
          "submission_status": submission.status if submission else "not_submitted",
          "submission_id": submission.id if submission else None,
@@ -298,7 +298,7 @@ def parent_child_assignments(
         HomeworkAssignment.class_name == (student.form or ""),
         HomeworkAssignment.status == "published",
     ).order_by(HomeworkAssignment.due_at.asc(), HomeworkAssignment.id.desc()).limit(500).all()
-    return {"assignments": [
+    return {"attachments_enabled": settings.homework_attachments_enabled, "assignments": [
         {**_assignment_out(a, subject),
          "submission_status": submission.status if submission else "not_submitted",
          "submission_id": submission.id if submission else None,
@@ -345,6 +345,8 @@ class AttachmentUploadRequest(BaseModel):
 
 
 def _ready_attachment_out(db, school_id, submission_id):
+    if not settings.homework_attachments_enabled:
+        return []
     rows = db.query(HomeworkAttachment).filter(
         HomeworkAttachment.school_id == school_id,
         HomeworkAttachment.submission_id == submission_id,
