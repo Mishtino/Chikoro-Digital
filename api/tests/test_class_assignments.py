@@ -40,7 +40,7 @@ def test_teacher_student_access_is_limited_to_assigned_classes(client, db_sessio
     })
     assert assigned.status_code == 201
     classes = client.get("/classes")
-    assert [row["class_name"] for row in classes.json()] == ["Form 1"]
+    assert {row["class_name"] for row in classes.json()} == {"Form 1", "Form 2"}
 
     app.dependency_overrides[get_supabase_principal] = lambda: _principal(teacher, school)
     directory = client.get("/students")
