@@ -32,6 +32,7 @@ CREATE INDEX IF NOT EXISTS ix_class_assignments_school_teacher_active
     ON public.class_teacher_assignments (school_id, teacher_user_id, is_active);
 
 ALTER TABLE public.class_teacher_assignments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL PRIVILEGES ON TABLE public.class_teacher_assignments FROM anon, authenticated;
 
 -- No browser-facing policies are added. The API remains responsible for
 -- authorization; browser roles remain denied by default.
