@@ -93,6 +93,8 @@ def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
