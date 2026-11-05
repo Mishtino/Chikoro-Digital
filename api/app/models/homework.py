@@ -69,3 +69,35 @@ class HomeworkSubmission(Base):
         CheckConstraint("score IS NULL OR score >= 0", name="ck_homework_score_nonnegative"),
         Index("ix_homework_submissions_school_student", "school_id", "student_id"),
     )
+
+
+class HomeworkAttachment(Base):
+    __tablename__ = "homework_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    school_id = Column(Integer, ForeignKey("schools.id"), nullable=False, index=True)
+    submission_id = Column(Integer, nullable=False, index=True)
+    uploaded_by_user_id = Column(Integer, nullable=False)
+    object_path = Column(String(500), nullable=False, unique=True)
+    original_filename = Column(String(255), nullable=False)
+    content_type = Column(String(120), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["school_id", "submission_id"],
+            ["homework_submissions.school_id", "homework_submissions.id"],
+            name="fk_homework_attachment_school_submission",
+        ),
+        ForeignKeyConstraint(
+            ["school_id", "uploaded_by_user_id"],
+            ["users.school_id", "users.id"],
+            name="fk_homework_attachment_school_uploader",
+        ),
+        CheckConstraint("size_bytes > 0 AND size_bytes <= 10485760", name="ck_homework_attachment_size"),
+        CheckConstraint("status IN ('pending', 'ready')", name="ck_homework_attachment_status"),
+        UniqueConstraint("school_id", "id", name="uq_homework_attachments_school_id_id"),
+        Index("ix_homework_attachments_school_submission", "school_id", "submission_id"),
+    )
