@@ -115,9 +115,11 @@ def test_student_portal_fails_closed_when_account_maps_to_multiple_learners(clie
 
     fee_response = client.get("/portal/fee-status")
     results_response = client.get("/portal/results")
+    pdf_response = client.get("/portal/results/pdf")
 
     assert fee_response.status_code == 403
     assert results_response.status_code == 403
+    assert pdf_response.status_code == 403
     assert fee_response.json()["detail"] == "Student account is not uniquely linked"
     assert results_response.json()["detail"] == "Student account is not uniquely linked"
 
