@@ -77,7 +77,7 @@ def initiate_transaction(
     return resp
 
 
-_PAYNOW_HOSTS = {"paynow.co.zw", "www.paynow.co.zw", "secure.paynow.co.zw"}
+_PAYNOW_HOSTS = {"www.paynow.co.zw"}
 
 
 def _validate_paynow_url(url: str, purpose: str) -> str:
@@ -112,7 +112,7 @@ def _validate_browser_url(browser_url: str) -> str:
 def poll_transaction(poll_url: str, integration_key: str) -> dict:
     poll_url = _validate_poll_url(poll_url)
     with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-        r = client.get(poll_url)
+        r = client.post(poll_url)
         r.raise_for_status()
     resp = _parse_response(r.text)
     if "hash" in resp or "Hash" in resp:
