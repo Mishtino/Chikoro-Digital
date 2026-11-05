@@ -107,3 +107,14 @@ def test_platform_support_cannot_access_school_staff_directory(client, seed_two_
     response = client.get(f"/users?school_id={seed_two_schools['s1'].id}")
 
     assert response.status_code == 403
+
+
+def test_school_owner_with_platform_admin_flag_is_not_treated_as_school_admin(client, seed_two_schools):
+    owner = seed_two_schools["u1"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(
+        owner, role="owner", school_id=owner.school_id, is_admin=True
+    )
+
+    response = client.get("/users")
+
+    assert response.status_code == 403
