@@ -386,6 +386,10 @@ def create_homework_attachment_upload(
     submission, assignment = _submission_and_assignment(db, student.school_id, submission_id)
     if submission.student_id != student.id or assignment.status != "published":
         raise HTTPException(status_code=404, detail="Submission not found")
+    if assignment.due_at is not None:
+        due = assignment.due_at.replace(tzinfo=None) if assignment.due_at.tzinfo is not None else assignment.due_at
+        if datetime.now(timezone.utc).replace(tzinfo=None) > due:
+            raise HTTPException(status_code=409, detail="The attachment deadline has passed")
     content_type = payload.content_type.lower()
     extension = ALLOWED_ATTACHMENT_TYPES.get(content_type)
     if extension is None:
