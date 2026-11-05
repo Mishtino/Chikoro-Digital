@@ -32,8 +32,7 @@ Authorization never trusts user-editable Supabase `user_metadata`.
 
 ## Migration and provisioning status
 
-Migration `202611040003_vortex_staff_roles.sql` expands the trusted profile role
-allow-list. It is committed but **has not been applied** to the live database.
+The role allow-list migration is **not approved or applied**. The former local drafts (`202611040001`–`003`) have been quarantined in `supabase/proposed_migrations/` because they do not match the live migration history and schema. A new forward-only role-check proposal is staged at `supabase/proposed_migrations/20261105_add_profiles_platform_role_allowlist.sql`; it must pass a staging clone before being promoted into the canonical migration chain.
 
 Owner-only Vortex staff invitations are implemented at
 `POST /platform/staff/invitations`; `GET /platform/staff` lists linked
