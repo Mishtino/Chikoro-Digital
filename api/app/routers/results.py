@@ -11,6 +11,7 @@ from app.models.results import Subject, Assessment, Mark
 from app.models.student import Student
 from app.models.fee import Term
 from app.services.audit import write_audit
+from app.services.class_access import require_teacher_class
 
 router = APIRouter(prefix="/results", tags=["results"])
 
@@ -133,6 +134,8 @@ def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depend
         assessment = assessments_by_id.get(e.assessment_id)
         if student is None:
             raise HTTPException(status_code=404, detail="Student or assessment not found in this school")
+        if principal.role == "teacher" and not principal.is_admin:
+            require_teacher_class(db, principal, sid, student.form or "")
         if not math.isfinite(e.score) or e.score < 0 or e.score > assessment.max_score:
             raise HTTPException(status_code=422, detail="Mark score must be finite and within the assessment range")
         existing = db.query(Mark).filter(Mark.school_id == sid, Mark.student_id == e.student_id, Mark.assessment_id == e.assessment_id).first()
