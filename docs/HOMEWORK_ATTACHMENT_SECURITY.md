@@ -14,6 +14,7 @@
 - Original filenames are display metadata only. Object keys use generated UUIDs and never contain user-provided path segments.
 - No overwrite is permitted. Each upload gets a unique object path.
 - Pending uploads are not exposed in listing responses. A pending upload is not considered submitted/available until Storage metadata has been verified.
+- MIME and size checks are not malware scanning. Before production release, add a quarantine/scanning step (for example, a managed malware-scanning service) before changing an uploaded object to downloadable/ready. Until that control exists, attachments must remain a staging-only feature.
 
 ## Security boundaries
 - Bucket is private; public object URLs are not used.
