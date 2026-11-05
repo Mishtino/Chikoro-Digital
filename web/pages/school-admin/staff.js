@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import Brand from '../../components/Brand';
 
 const STAFF_ROLES = ['owner', 'headmaster', 'bursar', 'teacher'];
 const DEFAULT_CAPABILITIES = {
@@ -172,7 +173,7 @@ export default function SchoolStaffDirectory() {
     <main style={{ minHeight: '100vh', background: '#f5f7fb', padding: '32px 18px', color: '#172033' }}>
       <section style={{ maxWidth: 1040, margin: '0 auto' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
-          <div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>CHIKORO DIGITAL · SCHOOL ADMINISTRATION</p><h1 style={{ margin: '8px 0 4px' }}>Staff directory</h1><p style={{ margin: 0, color: '#53627a' }}>{schoolName || 'Your school'} · Signed in as {roleLabel(role)}</p></div>
+          <div><div style={{ marginBottom: 10 }}><Brand compact /></div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>SCHOOL ADMINISTRATION</p><h1 style={{ margin: '8px 0 4px' }}>Staff directory</h1><p style={{ margin: 0, color: '#53627a' }}>{schoolName || 'Your school'} · Signed in as {roleLabel(role)}</p></div>
           <button type="button" onClick={signOut} style={{ border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff', padding: '10px 14px', cursor: 'pointer' }}>Sign out</button>
         </header>
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
