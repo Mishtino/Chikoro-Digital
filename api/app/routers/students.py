@@ -14,6 +14,7 @@ from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.student import Student, Contact
 from app.models.school import School
 from app.models.user import User
+from app.services.class_access import assigned_class_names
 from app.services.auth import hash_password
 from app.services.ids import generate_student_number, generate_pin, hash_pin
 from app.services.audit import write_audit
@@ -96,7 +97,7 @@ def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
 
 
 @router.post("", response_model=StudentCreateResult, status_code=status.HTTP_201_CREATED)
-def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
+def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _school_id(principal, payload.school_id)
     # Serialize student-number allocation within a school. The school row lock
     # remains held until commit, preventing concurrent admissions from reading
@@ -239,7 +240,13 @@ def list_students(school_id: Optional[int] = Query(None), principal: SupabasePri
     sid = _school_id(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
-    students = db.query(Student).filter(Student.school_id == sid).order_by(Student.id).all()
+    student_query = db.query(Student).filter(Student.school_id == sid)
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, sid) or set()
+        if not allowed_classes:
+            return []
+        student_query = student_query.filter(Student.form.in_(allowed_classes))
+    students = student_query.order_by(Student.id).all()
     return [
         StudentOut(
             id=s.id,
@@ -263,6 +270,10 @@ def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_
         raise HTTPException(status_code=404, detail="Student not found")
     if not principal.is_admin and principal.school_id != student.school_id:
         raise HTTPException(status_code=403, detail="Access denied")
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, student.school_id) or set()
+        if student.form not in allowed_classes:
+            raise HTTPException(status_code=404, detail="Student not found")
     return {
         "id": student.id,
         "school_id": student.school_id,
