@@ -10,9 +10,24 @@
 | FastAPI API | Render service `Chikoro-Digital`, service ID `srv-dbifhi49v7es739svs7g`, root `api`, production branch `main`, auto-deploy enabled | Deploy after compatible DB changes and environment readiness. Verify live commit and health/smoke tests. |
 | Staff/student/parent web app | Vercel project linked to the same GitHub repository | Reconfirm production project ID, root directory, domains and production branch before release. |
 | Vortex developer/admin portal | Separate Vercel project linked to the same repository | Reconfirm production project ID, root directory, domains and production branch before release. |
-| Additional Vercel projects | Four Vercel projects are linked to this repository; the remaining project purposes and deployment roots need a fresh inventory | Do not assume every linked project should receive every frontend build. Map each project to its application and environment first. |
+| Additional Vercel projects | Four Vercel projects are linked to this repository; their current root-directory mapping is recorded below | Do not assume every linked project should receive every frontend build. Map each project to its application and environment first. |
 | Background worker | `worker/worker.py` is currently a placeholder; no production job-processing implementation has been verified | Do not deploy or grant database access to a worker until actual jobs, service configuration and permissions are ready. |
 | Mobile apps | Current repository inventory reviewed here identifies the web portals; native iOS/Android release artifacts have not been verified | Treat App Store / Google Play publishing as a separate release stream once native or approved installable app packages exist. |
+
+## Vercel project inventory (read-only, 5 November 2026)
+
+The Vercel Git integration metadata and project records identify these four projects as linked to `Mishtino/Chikoro-Digital`:
+
+| Project | Project ID | Root directory | Current project domains | Release interpretation |
+|---|---|---|---|---|
+| `chikoro-digital` | `prj_vwMXe7bbljJ7Cf2cVafchFxDwUez` | `admin` | `chikoro-digital.vercel.app`, `chikoro-digital-vortex-technologies.vercel.app` | Canonical admin-root candidate; domain aliases exist, but the inspected project record reports `live: false`. |
+| `chikoro-digital-d9ge` | `prj_LECT319368Ee53Jg7flvGAQWnTB5` | `web` | `chikoro-digital-d9ge.vercel.app`, `chikoro-digital-d9ge-vortex-technologies.vercel.app`, `chikoro-digital-d9ge-git-main-vortex-technologies.vercel.app` | The only currently identified `web`-root project; candidate for the school/student/parent web portal. |
+| `chikoro-digital-oydi` | `prj_CNLlvxGUYa0KlOOjSwWap6AFhCRd` | `admin` | `chikoro-digital-oydi-gray.vercel.app` | Duplicate `admin` root; purpose/domain ownership needs operator confirmation before disabling or deleting. |
+| `chikoro-digital-uyds` | `prj_1mpTUujm1soFGkJhTUXDgWVv4whX` | `admin` | `chikoro-digital-uyds.vercel.app`, `chikoro-digital-uyds-vortex-technologies.vercel.app`, `chikoro-digital-uyds-git-main-vortex-technologies.vercel.app` | Duplicate `admin` root; purpose/domain ownership needs operator confirmation before disabling or deleting. |
+
+All four project records reported `live: false` and their latest deployment state as `READY` with no production target. A READY preview is not proof of a production deployment. The team is on the Hobby plan. GitHub integration comments on this branch recorded both the daily deployment quota limit (`api-deployments-free-per-day`) and deployment flood limit (`api-deployments-flood`).
+
+**Safe consolidation proposal (not yet applied):** retain `chikoro-digital` for the `admin` root and `chikoro-digital-d9ge` for the `web` root; first verify aliases, environment variables, protection settings, and any external consumers of `oydi` and `uyds`. Only after that inventory should duplicate preview builds be disabled or projects be disconnected/deleted. No Vercel project settings, domains, integrations, or deployments were changed during this inventory.
 
 ## Required release sequence
 
