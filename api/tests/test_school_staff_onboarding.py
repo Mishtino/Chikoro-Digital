@@ -107,3 +107,16 @@ def test_school_invitation_requires_live_school(client, seed_two_schools, monkey
         "email": "new@example.com", "full_name": "New Teacher", "role": "teacher"
     })
     assert response.status_code == 409
+
+def test_staff_management_capabilities_fail_closed_by_default(client, seed_two_schools, monkeypatch):
+    import app.routers.school_staff as router
+    monkeypatch.setattr(router, "school_staff_role_schema_ready", lambda db: True)
+    owner = seed_two_schools["u1"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _school_admin(owner)
+    response = client.get("/users/staff-management/capabilities")
+    assert response.status_code == 200
+    assert response.json()["invitations_enabled"] is False
+    assert response.json()["lifecycle_enabled"] is False
+    assert response.json()["invitable_roles"] == ["bursar", "headmaster", "teacher"]
+
+
