@@ -31,6 +31,11 @@ def validate_database_url(database_url: str) -> tuple[bool, str]:
         return False, "DATABASE_URL is malformed."
 
     database = unquote(parsed.path.lstrip("/"))
+    # libpq accepts connection parameters in the URI query string. Reject them
+    # so a validated loopback authority cannot be paired with an overriding
+    # host/hostaddr/service parameter when the child process opens the URL.
+    if parsed.query or parsed.fragment:
+        return False, "Query parameters and fragments are not allowed in DATABASE_URL."
     if parsed.scheme not in ALLOWED_SCHEMES:
         return False, "Only PostgreSQL URLs are accepted."
     if parsed.hostname not in ALLOWED_HOSTS:
