@@ -104,6 +104,12 @@ def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[
 @router.post("/marks")
 def enter_marks(payload: BulkMarksRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    submitted_pairs = [(entry.student_id, entry.assessment_id) for entry in payload.entries]
+    if len(submitted_pairs) != len(set(submitted_pairs)):
+        raise HTTPException(
+            status_code=422,
+            detail="A learner can only have one mark per assessment in a single bulk request",
+        )
     created = 0
     for e in payload.entries:
         student = db.query(Student).filter(Student.id == e.student_id, Student.school_id == sid).first()
