@@ -29,8 +29,12 @@ def test_accepts_explicit_hardened_production_configuration():
         ("debug", True),
         ("database_url", "sqlite:///./production.db"),
         ("supabase_url", "http://example-project.supabase.co"),
+        ("supabase_url", "https://example-project.supabase.co/storage/v1"),
+        ("supabase_url", "https://user:pass@example-project.supabase.co"),
         ("cors_origins", "*"),
         ("cors_origins", "http://school.example.com"),
+        ("cors_origins", "https://user:pass@school.example.com"),
+        ("cors_origins", "https://school.example.com/path"),
         ("supabase_secret_key", ""),
     ],
 )
