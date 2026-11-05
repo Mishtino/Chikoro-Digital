@@ -42,3 +42,63 @@ def test_student_lookup_cannot_cross_school_boundary(client, seed_two_schools):
     response = client.get(f"/students/{other_school_student_id}")
 
     assert response.status_code == 403
+
+
+def test_school_admin_can_update_student_profile_and_audit_changes(client, seed_two_schools, db_session):
+    data = seed_two_schools
+    _set_principal(data["u1"], data["s1"].id)
+    created = client.post("/students", json={
+        "first_name": "Ada",
+        "last_name": "Moyo",
+        "form": "Form 1",
+    })
+    assert created.status_code == 201
+
+    response = client.patch(f"/students/{created.json()['id']}", json={
+        "first_name": "  Adah ",
+        "form": " Form 2 ",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["first_name"] == "Adah"
+    assert response.json()["last_name"] == "Moyo"
+    assert response.json()["form"] == "Form 2"
+
+    from app.models.audit import AuditLog
+    audit = db_session.query(AuditLog).filter(
+        AuditLog.action == "student.profile_update",
+        AuditLog.entity_id == str(created.json()["id"]),
+    ).order_by(AuditLog.id.desc()).first()
+    assert audit is not None
+    assert audit.details["changes"]["first_name"] == {"from": "Ada", "to": "Adah"}
+
+
+def test_student_profile_update_rejects_blank_or_unknown_fields(client, seed_two_schools):
+    data = seed_two_schools
+    _set_principal(data["u1"], data["s1"].id)
+    created = client.post("/students", json={"first_name": "Ada", "last_name": "Moyo"})
+    student_id = created.json()["id"]
+
+    blank = client.patch(f"/students/{student_id}", json={"first_name": "   "})
+    protected = client.patch(f"/students/{student_id}", json={"student_number": "OTHER"})
+    empty = client.patch(f"/students/{student_id}", json={})
+
+    assert blank.status_code == 422
+    assert protected.status_code == 422
+    assert empty.status_code == 422
+
+
+def test_student_profile_update_is_school_scoped_and_admin_only(client, seed_two_schools):
+    data = seed_two_schools
+    _set_principal(data["u1"], data["s1"].id)
+    created = client.post("/students", json={"first_name": "Ada", "last_name": "Moyo"})
+    student_id = created.json()["id"]
+
+    _set_principal(data["u2"], data["s2"].id)
+    cross_school = client.patch(f"/students/{student_id}", json={"form": "Form 4"})
+    assert cross_school.status_code == 404
+
+    teacher = data["u1"]
+    _set_principal(teacher, data["s1"].id, role="teacher")
+    forbidden = client.patch(f"/students/{student_id}", json={"form": "Form 4"})
+    assert forbidden.status_code == 403
