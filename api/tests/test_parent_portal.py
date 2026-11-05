@@ -10,6 +10,38 @@ from app.models.student import Student
 from app.routers import portal
 
 
+def _reset_sqlite_public_schema(db_session):
+    """Prepare the attached SQLite schema used to mirror Supabase public tables."""
+    from sqlalchemy import text
+
+    attached = {
+        row[1] for row in db_session.execute(text("PRAGMA database_list")).all()
+    }
+    if "public" not in attached:
+        db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
+
+    for table in ("guardian_links", "contacts", "students"):
+        db_session.execute(text(f"DROP TABLE IF EXISTS public.{table}"))
+    db_session.execute(text("""
+        CREATE TABLE public.contacts AS
+        SELECT id, school_id, student_id FROM contacts
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.students AS
+        SELECT id, school_id, status FROM students
+    """))
+    db_session.execute(text("""
+        CREATE TABLE public.guardian_links (
+            profile_id TEXT NOT NULL,
+            contact_id INTEGER NOT NULL,
+            school_id INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL,
+            verified_at TEXT
+        )
+    """))
+
+
+
 def test_parent_terms_only_include_published_terms_for_selected_learner(client, db_session, monkeypatch):
     school = School(code="PAR001", name="Parent Portal School")
     other_school = School(code="PAR002", name="Other School")
@@ -342,25 +374,9 @@ def test_verified_parent_can_download_linked_child_report_card_pdf(client, db_se
     db_session.commit()
 
     # Exercise the real guardian-link authorization query at the PDF route,
-    # not a mocked _parent_student helper.
-    db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
-    db_session.execute(text("""
-        CREATE TABLE public.contacts AS
-        SELECT id, school_id, student_id FROM contacts
-    """))
-    db_session.execute(text("""
-        CREATE TABLE public.students AS
-        SELECT id, school_id, status FROM students
-    """))
-    db_session.execute(text("""
-        CREATE TABLE public.guardian_links (
-            profile_id TEXT NOT NULL,
-            contact_id INTEGER NOT NULL,
-            school_id INTEGER NOT NULL,
-            is_active BOOLEAN NOT NULL,
-            verified_at TEXT
-        )
-    """))
+    # not a mocked _parent_student helper. Reuse the shared connection's
+    # attached schema if another test has already created it.
+    _reset_sqlite_public_schema(db_session)
     db_session.execute(text("""
         INSERT INTO public.guardian_links
             (profile_id, contact_id, school_id, is_active, verified_at)
@@ -429,32 +445,9 @@ def test_parent_student_ids_resolve_only_real_active_verified_guardian_links(
     db_session.add_all(contacts)
     db_session.flush()
 
-    # This attached SQLite table mirrors the live guardian_links columns
-    # used by _parent_student_ids without a paid Supabase staging branch.
-    # SQLite's attached "public" schema mirrors the schema-qualified
-    # table reference used by the production PostgreSQL query.
-    db_session.execute(text("ATTACH DATABASE ':memory:' AS public"))
-    # The production query schema-qualifies all three joined tables. Copy the
-    # fixture rows into SQLite's attached public schema so the test exercises
-    # the same qualification rather than accidentally mixing schemas.
-    db_session.execute(text("""
-        CREATE TABLE public.contacts AS
-        SELECT id, school_id, student_id FROM contacts
-    """))
-    db_session.execute(text("""
-        CREATE TABLE public.students AS
-        SELECT id, school_id, status FROM students
-    """))
-    db_session.execute(text("DROP TABLE IF EXISTS public.guardian_links"))
-    db_session.execute(text("""
-        CREATE TABLE public.guardian_links (
-            profile_id TEXT NOT NULL,
-            contact_id INTEGER NOT NULL,
-            school_id INTEGER NOT NULL,
-            is_active BOOLEAN NOT NULL,
-            verified_at TEXT
-        )
-    """))
+    # Mirror Supabase's schema-qualified tables in SQLite. Reuse an existing
+    # attachment on the shared in-memory connection and reset its fixture data.
+    _reset_sqlite_public_schema(db_session)
     db_session.execute(text("""
         INSERT INTO public.guardian_links
             (profile_id, contact_id, school_id, is_active, verified_at)
