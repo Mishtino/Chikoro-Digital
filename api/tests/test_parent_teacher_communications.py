@@ -8,7 +8,7 @@ from app.models.class_assignment import ClassTeacherAssignment
 from app.models.parent_teacher_message import ParentTeacherConversation
 from app.models.student import Student
 from app.models.user import User
-from app.routers import portal
+from app.routers import parent_teacher
 from app.services.auth import hash_password
 
 
@@ -51,7 +51,7 @@ def test_parent_teacher_messages_are_scoped_to_verified_child_and_assigned_teach
     ))
     db_session.commit()
 
-    monkeypatch.setattr(portal, "_parent_student", lambda _principal, sid, _db: (
+    monkeypatch.setattr(parent_teacher, "_parent_student", lambda _principal, sid, _db: (
         learner if sid == learner.id else (_ for _ in ()).throw(
             HTTPException(status_code=404, detail="Linked student not found")
         )
