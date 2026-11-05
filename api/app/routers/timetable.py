@@ -15,6 +15,7 @@ from app.models.school import School
 from app.models.timetable import TimetableEntry
 from app.models.user import User
 from app.services.audit import write_audit
+from app.services.class_access import assigned_class_names
 
 router = APIRouter(prefix="/timetable", tags=["timetable"])
 SCHOOL_ROLES = ("owner", "headmaster", "teacher")
@@ -72,6 +73,9 @@ def list_timetable_entries(
         .outerjoin(User, and_(User.id == TimetableEntry.teacher_user_id, User.school_id == sid))
         .filter(TimetableEntry.school_id == sid)
     )
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, sid) or set()
+        query = query.filter(or_(TimetableEntry.class_name.in_(allowed_classes), TimetableEntry.teacher_user_id == principal.user_id))
     if class_name:
         query = query.filter(TimetableEntry.class_name == class_name.strip())
     if day_of_week is not None:
