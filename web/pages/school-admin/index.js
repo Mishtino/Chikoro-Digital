@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { api } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import Brand from '../../components/Brand';
 
 const initial = {
   school: null,
@@ -69,7 +70,7 @@ export default function SchoolAdminDashboard() {
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
-          <p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>CHIKORO DIGITAL · SCHOOL ADMINISTRATION</p>
+          <div style={{ marginBottom: 10 }}><Brand compact /></div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>SCHOOL ADMINISTRATION</p>
           <h1 style={{ margin: '8px 0 4px' }}>{school?.name || 'School dashboard'}</h1>
           <p style={{ margin: 0, color: '#64748b' }}>{school ? `${school.code} · ${school.province || 'Province not set'} · ${school.status}` : 'Your school overview'} {role ? `· ${role.replaceAll('_', ' ')}` : ''}</p>
         </div>
