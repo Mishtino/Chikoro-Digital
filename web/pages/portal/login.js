@@ -27,6 +27,7 @@ export default function PortalLogin() {
       }
       if (profile.role === 'parent') { router.push('/portal/parent'); return; }
       if (['owner', 'headmaster'].includes(profile.role) && !profile.is_admin && profile.school_id) { router.push('/school-admin'); return; }
+      if (profile.role === 'bursar' && !profile.is_admin && profile.school_id) { router.push('/school-admin/finance'); return; }
       if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have portal access.'); }
       router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
