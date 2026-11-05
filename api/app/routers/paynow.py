@@ -316,6 +316,16 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         db.commit()
         raise HTTPException(status_code=400, detail=resp.get("error") or "Paynow initiation failed")
 
+    # Paynow requires the initiation response hash to be verified before
+    # redirecting a customer to the provider-returned checkout URL.
+    if not resp.get("hash_verified"):
+        attempt.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail="Paynow returned an unverified checkout response. Please contact your school before retrying.",
+        )
+
     browser_url = resp.get("BrowserUrl") or resp.get("browserurl")
     poll_url = resp.get("PollUrl") or resp.get("pollurl")
     try:
