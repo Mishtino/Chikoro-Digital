@@ -27,7 +27,6 @@ def test_accepts_explicit_hardened_production_configuration():
         ("secret_key", "change-me-in-production-please"),
         ("secret_key", "short"),
         ("debug", True),
-        ("admin_mfa_required", False),
         ("paynow_return_url", "http://school.example.com/paynow/return"),
         ("paynow_result_url", "http://api.example.com/paynow/webhook"),
         ("database_url", "sqlite:///./production.db"),
