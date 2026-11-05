@@ -337,11 +337,15 @@ def class_performance_analytics(
 
 @router.get("/report-card/{student_id}")
 def report_card(student_id: int, term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
-    student = db.get(Student, student_id)
+    if principal.is_admin or principal.role not in {"owner", "headmaster", "teacher"} or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School academic access required")
+    student = db.query(Student).filter(
+        Student.id == student_id, Student.school_id == principal.school_id
+    ).first()
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
-    if not principal.is_admin and principal.school_id != student.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    if principal.role == "teacher":
+        require_teacher_class(db, principal, student.school_id, student.form or "")
     q = db.query(Mark, Assessment, Subject).join(Assessment, Assessment.id == Mark.assessment_id).join(Subject, Subject.id == Assessment.subject_id).filter(Mark.school_id == student.school_id, Assessment.school_id == student.school_id, Subject.school_id == student.school_id, Mark.student_id == student_id, Mark.status == "published")
     if term_id is not None:
         if db.query(Term).filter(Term.id == term_id, Term.school_id == student.school_id).first() is None:
@@ -351,12 +355,13 @@ def report_card(student_id: int, term_id: Optional[int] = None, principal: Supab
     # aggregate per subject
     subjects = {}
     for mark, assessment, subject in rows:
-        subjects.setdefault(subject.name, []).append((assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight)))
+        subjects.setdefault(subject.id, {"name": subject.name, "items": []})["items"].append((assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight)))
     result = []
-    for name, items in subjects.items():
+    for subject_id, group in subjects.items():
+        items = group["items"]
         total_weight = sum(w for _, _, _, w in items)
         weighted = sum((s / mx) * w for _, s, mx, w in items) if total_weight else 0
         avg = (weighted / total_weight * 100) if total_weight else 0
-        result.append({"subject": name, "average": round(avg, 2), "assessments": [{"name": a, "score": s, "max": mx} for a, s, mx, _ in items]})
+        result.append({"subject_id": subject_id, "subject": group["name"], "average": round(avg, 2), "assessments": [{"name": a, "score": s, "max": mx} for a, s, mx, _ in items]})
     return {"student_id": student.id, "student_number": student.student_number, "name": f"{student.first_name} {student.last_name}", "subjects": result}
 
