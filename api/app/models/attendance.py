@@ -21,7 +21,7 @@ class AttendanceSession(Base):
     class_name = Column(String(40), nullable=False)
     attendance_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False, default="draft")
-    recorded_by_user_id = Column(Integer, nullable=False
+    recorded_by_user_id = Column(Integer, nullable=False)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
@@ -46,7 +46,7 @@ class AttendanceRecord(Base):
     student_id = Column(Integer, nullable=False, index=True)
     status = Column(String(20), nullable=False)
     note = Column(Text, nullable=True)
-    marked_by_user_id = Column(Integer, nullable=False
+    marked_by_user_id = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
