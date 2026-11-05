@@ -26,7 +26,7 @@ export default function PortalLogin() {
         throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.');
       }
       if (profile.role === 'parent') { router.push('/portal/parent'); return; }
-      if (['owner', 'headmaster'].includes(profile.role) && !profile.is_admin && profile.school_id) { router.push('/school-admin/staff'); return; }
+      if (['owner', 'headmaster'].includes(profile.role) && !profile.is_admin && profile.school_id) { router.push('/school-admin'); return; }
       if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have portal access.'); }
       router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
