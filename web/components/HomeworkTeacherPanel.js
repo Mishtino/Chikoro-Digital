@@ -75,6 +75,16 @@ export default function HomeworkTeacherPanel() {
     finally { setBusy(false); }
   }
 
+
+  async function downloadAttachment(attachmentId) {
+    try {
+      const result = await api('/homework/attachments/' + attachmentId + '/download-url', { method: 'POST' });
+      window.open(result.download_url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setError(e.message || 'Attachment could not be opened.');
+    }
+  }
+
   async function mark(event, submission) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -95,7 +105,7 @@ export default function HomeworkTeacherPanel() {
 
   return <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginBottom: 18 }}>
     <h2 style={{ margin: '0 0 6px', fontSize: 18 }}>Homework and assignments</h2>
-    <p style={{ color: '#64748b', fontSize: 13 }}>Publish work to your assigned classes, then review and mark learner submissions. Text answers are supported in this release.</p>
+    <p style={{ color: '#64748b', fontSize: 13 }}>Publish work to your assigned classes, then review, download and mark learner submissions.</p>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#067647' }}>{notice}</p>}
     <form onSubmit={create} style={{ display: 'grid', gap: 10, maxWidth: 720 }}>
@@ -118,6 +128,7 @@ export default function HomeworkTeacherPanel() {
         <strong>{sub.student_name} · {sub.student_number}</strong>
         <p style={{ whiteSpace: 'pre-wrap' }}>{sub.answer_text}</p>
         <p style={{ color: '#64748b', fontSize: 12 }}>Status: {sub.status} · Submitted: {new Date(sub.submitted_at).toLocaleString()}</p>
+        {!!sub.attachments?.length && <div><strong>Attachments</strong><ul>{sub.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button> <small>({Math.ceil(file.size_bytes / 1024)} KB)</small></li>)}</ul></div>}
         <form onSubmit={event => mark(event, sub)} style={{ display: 'grid', gap: 8, maxWidth: 600 }}>
           <label>Score<input name="score" type="number" min="0" step="0.01" defaultValue={sub.score ?? ''} style={{ display: 'block', padding: 8 }} /></label>
           <label>Feedback<textarea name="feedback" rows={2} defaultValue={sub.feedback || ''} style={{ display: 'block', width: '100%', padding: 8 }} /></label>
