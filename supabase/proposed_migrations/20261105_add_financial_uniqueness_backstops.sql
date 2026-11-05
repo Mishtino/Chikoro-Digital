@@ -3,6 +3,7 @@
 -- Read-only production audit on 2026-11-05 found:
 --   * zero duplicate non-NULL payment references
 --   * zero duplicate (payment_id, invoice_id) allocation pairs
+--   * zero duplicate (school_id, student_id, term_id) invoices
 -- This migration adds database uniqueness backstops consistent with the
 -- SQLAlchemy models. It does not alter or rewrite financial data.
 --
@@ -16,6 +17,16 @@ BEGIN;
 
 DO $$
 BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'public.invoices'::regclass
+          AND conname = 'uq_invoice_student_term_per_school'
+    ) THEN
+        RAISE EXCEPTION
+            'uq_invoice_student_term_per_school already exists; inspect it before applying this proposal';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM pg_constraint
@@ -34,6 +45,17 @@ BEGIN
     ) THEN
         RAISE EXCEPTION
             'uq_payment_allocation_per_invoice already exists; inspect it before applying this proposal';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.invoices
+        WHERE term_id IS NOT NULL
+        GROUP BY school_id, student_id, term_id
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE EXCEPTION
+            'Duplicate learner/term invoices exist within a school; resolve before applying this proposal';
     END IF;
 
     IF EXISTS (
@@ -58,6 +80,10 @@ BEGIN
     END IF;
 END
 $$;
+
+ALTER TABLE public.invoices
+    ADD CONSTRAINT uq_invoice_student_term_per_school
+    UNIQUE (school_id, student_id, term_id);
 
 ALTER TABLE public.payments
     ADD CONSTRAINT uq_payment_reference_per_school
