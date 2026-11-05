@@ -46,7 +46,7 @@ def test_school_owner_sees_only_staff_in_own_school(client, seed_two_schools, db
     response = client.get("/users")
 
     assert response.status_code == 200
-    assert [row["email"] for row in response.json()] == ["teacher1@test.com"]
+    assert [row["email"] for row in response.json()] == ["owner1@test.com", "teacher1@test.com"]
 
 
 def test_school_headmaster_cannot_request_another_school_staff(client, seed_two_schools):
