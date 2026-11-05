@@ -64,10 +64,10 @@ export default function HomeworkTeacherPanel() {
         body: JSON.stringify({
           class_name: form.class_name, subject_id: Number(form.subject_id),
           title: form.title.trim(), instructions: form.instructions.trim(),
-          due_at: form.due_at || null, publish: true,
+          due_at: form.due_at ? new Date(form.due_at).toISOString() : null, publish: true,
         }),
       });
-      const rows = await loadAssignments();
+      await loadAssignments();
       setSelectedId(String(result.id));
       setForm(value => ({ ...value, title: '', instructions: '', due_at: '' }));
       setNotice('Homework published to ' + form.class_name + '.');
