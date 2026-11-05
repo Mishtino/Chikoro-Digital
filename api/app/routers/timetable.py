@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -143,9 +144,9 @@ def create_timetable_entry(
     db.add(entry)
     try:
         db.commit()
-    except Exception:
+    except IntegrityError:
         db.rollback()
-        raise
+        raise HTTPException(status_code=409, detail="A timetable period already exists for this class")
     db.refresh(entry)
     write_audit(db, principal, "timetable.entry.create", "timetable_entry", entry.id, {
         "class_name": entry.class_name, "day_of_week": entry.day_of_week,
