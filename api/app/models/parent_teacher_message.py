@@ -26,6 +26,15 @@ class ParentTeacherConversation(Base):
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("school_id", "id", name="uq_parent_teacher_conversations_school_id"),
+        ForeignKeyConstraint(
+            ["school_id", "parent_user_id"], ["users.school_id", "users.id"],
+            name="fk_parent_teacher_conversation_school_parent",
+        ),
+        ForeignKeyConstraint(
+            ["school_id", "teacher_user_id"], ["users.school_id", "users.id"],
+            name="fk_parent_teacher_conversation_school_teacher",
+        ),
         ForeignKeyConstraint(
             ["school_id", "student_id"],
             ["students.school_id", "students.id"],
@@ -56,6 +65,10 @@ class ParentTeacherMessage(Base):
             ["school_id", "conversation_id"],
             ["parent_teacher_conversations.school_id", "parent_teacher_conversations.id"],
             name="fk_parent_teacher_message_school_conversation",
+        ),
+        ForeignKeyConstraint(
+            ["school_id", "sender_user_id"], ["users.school_id", "users.id"],
+            name="fk_parent_teacher_message_school_sender",
         ),
         CheckConstraint("length(trim(body)) > 0", name="ck_parent_teacher_message_body"),
         UniqueConstraint("school_id", "id", name="uq_parent_teacher_messages_school_id_id"),
