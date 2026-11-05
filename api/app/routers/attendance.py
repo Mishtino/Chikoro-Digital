@@ -12,6 +12,7 @@ from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.fee import Term
 from app.models.student import Student
 from app.services.audit import write_audit
+from app.services.class_access import assigned_class_names, require_teacher_class
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 SCHOOL_ROLES = ("owner", "headmaster", "teacher")
@@ -79,6 +80,7 @@ def create_session(
     db: Session = Depends(get_db),
 ):
     school_id = _school(principal, None)
+    require_teacher_class(db, principal, school_id, payload.class_name)
     if payload.term_id is not None and db.query(Term).filter(
         Term.id == payload.term_id, Term.school_id == school_id
     ).first() is None:
@@ -121,6 +123,11 @@ def list_sessions(
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be on or before to_date")
     query = db.query(AttendanceSession).filter(AttendanceSession.school_id == sid)
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, sid) or set()
+        if not allowed_classes:
+            return []
+        query = query.filter(AttendanceSession.class_name.in_(allowed_classes))
     if from_date:
         query = query.filter(AttendanceSession.attendance_date >= from_date)
     if to_date:
@@ -158,6 +165,7 @@ def get_session_records(
     ).first()
     if session is None:
         raise HTTPException(status_code=404, detail="Attendance register not found")
+    require_teacher_class(db, principal, sid, session.class_name)
     students = db.query(Student).filter(
         Student.school_id == sid, Student.form == session.class_name, Student.status == "active"
     ).order_by(Student.last_name, Student.first_name).all()
@@ -195,6 +203,7 @@ def save_session_records(
     ).with_for_update().first()
     if session is None:
         raise HTTPException(status_code=404, detail="Attendance register not found")
+    require_teacher_class(db, principal, sid, session.class_name)
     if session.status != "draft":
         raise HTTPException(status_code=409, detail="Submitted attendance registers are read-only")
     student_ids = sorted(entry.student_id for entry in payload.entries)
@@ -242,6 +251,7 @@ def submit_session(
     ).with_for_update().first()
     if session is None:
         raise HTTPException(status_code=404, detail="Attendance register not found")
+    require_teacher_class(db, principal, sid, session.class_name)
     if session.status != "draft":
         raise HTTPException(status_code=409, detail="Attendance register has already been submitted")
     roster = db.query(Student.id).filter(
