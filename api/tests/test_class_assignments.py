@@ -189,3 +189,31 @@ def test_teacher_timetable_visibility_is_limited_to_assigned_classes(client, db_
     response = client.get("/timetable/entries")
     assert response.status_code == 200
     assert [row["class_name"] for row in response.json()] == ["Form 1"]
+
+
+def test_assignment_listing_never_exposes_foreign_school_teacher(client, db_session, seed_two_schools):
+    from app.models.class_assignment import ClassTeacherAssignment
+
+    school = seed_two_schools["s1"]
+    foreign_school = seed_two_schools["s2"]
+    owner = seed_two_schools["u1"]
+    foreign_teacher = User(
+        email="foreign.list.teacher@example.com", full_name="Foreign School Teacher",
+        password_hash=hash_password("test-password"), role="teacher",
+        school_id=foreign_school.id, is_active=True, is_admin=False,
+    )
+    db_session.add(foreign_teacher)
+    db_session.flush()
+    # Simulate a legacy or out-of-band malformed row before the composite
+    # tenant foreign key has been applied. The API must still fail closed.
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 9",
+        teacher_user_id=foreign_teacher.id, assigned_by_user_id=owner.id,
+        is_active=True,
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _principal(owner, school)
+
+    response = client.get("/classes/assignments")
+    assert response.status_code == 200
+    assert response.json() == []
