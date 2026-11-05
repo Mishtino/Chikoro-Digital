@@ -850,27 +850,42 @@ def test_unverified_callback_cannot_cancel_attempt_or_overwrite_provider_referen
     db_session.add(attempt)
     db_session.commit()
 
-    monkeypatch.setattr(
-        paynow, "poll_transaction",
-        lambda _url, _key: {
+    poll_results = iter([
+        {
             "Status": "Pending",
             "reference": "PN-CALLBACK-UNVERIFIED",
             "hash_verified": False,
         },
-    )
-    response = client.post(
-        "/paynow/webhook",
-        data={
-            "reference": attempt.reference,
-            "status": "Cancelled",
-            "paynowreference": "attacker-controlled-reference",
+        {
+            "Status": "Pending",
+            "reference": "PN-CALLBACK-UNVERIFIED",
+            "hash_verified": True,
         },
+    ])
+    monkeypatch.setattr(
+        paynow, "poll_transaction",
+        lambda _url, _key: next(poll_results),
     )
+    callback = {
+        "reference": attempt.reference,
+        "status": "Cancelled",
+        "paynowreference": "attacker-controlled-reference",
+    }
+    response = client.post("/paynow/webhook", data=callback)
 
     assert response.status_code == 200
     assert response.json()["status"] == "provider status could not be verified"
     db_session.refresh(attempt)
     assert attempt.status == "unverified"
+    assert attempt.paynow_reference == "provider-reference-before"
+
+    # Even a valid signed Pending poll must override a forged Cancelled
+    # callback field; callback form data is only a wake-up signal.
+    response = client.post("/paynow/webhook", data=callback)
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    db_session.refresh(attempt)
+    assert attempt.status == "sent"
     assert attempt.paynow_reference == "provider-reference-before"
     assert db_session.query(Payment).count() == 0
 
