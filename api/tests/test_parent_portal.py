@@ -270,3 +270,48 @@ def test_parent_attendance_rejects_unlinked_child_and_invalid_date_range(client,
     assert invalid.status_code == 422
     unlinked = client.get("/portal/parent/children/999999/attendance")
     assert unlinked.status_code == 404
+
+def test_parent_term_comparison_is_scoped_to_verified_child(client, db_session, monkeypatch):
+    school = School(code="PCMP1", name="Parent Comparison")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(
+        school_id=school.id, student_number="PCMP-001", first_name="Rudo",
+        last_name="Moyo", status="active",
+    )
+    db_session.add(learner)
+    db_session.flush()
+    term1 = Term(school_id=school.id, name="Term 1", academic_year="2026",
+                 start_date=date(2026, 1, 1))
+    term2 = Term(school_id=school.id, name="Term 2", academic_year="2026",
+                 start_date=date(2026, 5, 1))
+    db_session.add_all([term1, term2])
+    db_session.flush()
+    subject = Subject(school_id=school.id, name="English")
+    db_session.add(subject)
+    db_session.flush()
+    assessments = [
+        Assessment(school_id=school.id, subject_id=subject.id, term_id=term1.id,
+                   name="Term 1", weight=1, max_score=100),
+        Assessment(school_id=school.id, subject_id=subject.id, term_id=term2.id,
+                   name="Term 2", weight=1, max_score=100),
+    ]
+    db_session.add_all(assessments)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[0].id,
+             score=55, status="published"),
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[1].id,
+             score=75, status="published"),
+    ])
+    db_session.commit()
+    parent = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=9200, school_id=school.id,
+        role="parent", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: parent
+    monkeypatch.setattr(portal, "_parent_student", lambda _principal, student_id, _db: learner if student_id == learner.id else None)
+    response = client.get(f"/portal/parent/children/{learner.id}/results/comparison")
+    assert response.status_code == 200
+    assert response.json()["subjects"][0]["change"] == 20.0
+
