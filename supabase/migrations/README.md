@@ -18,8 +18,12 @@ migration was run during recovery.
 
 Do not move or apply anything from `supabase/proposed_migrations/` until it has
 been tested against a staging clone and explicitly approved. The proposed
-role allow-list and financial uniqueness migrations are not part of the
-canonical migration chain.
+role allow-list, financial uniqueness, attendance register, timetable and
+class-teacher assignment migrations are not part of the canonical migration
+chain. In particular, the attendance/timetable/class APIs require their
+corresponding proposed schema to be validated and applied in staging before
+the code can be released. Do not copy these files into this directory as a
+shortcut around the migration review.
 
 See `docs/SUPABASE_MIGRATION_RECONCILIATION.md` for the recovery record,
 schema differences, and release checklist.
