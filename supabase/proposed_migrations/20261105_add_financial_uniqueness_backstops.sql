@@ -99,7 +99,7 @@ ALTER TABLE public.payment_allocations
     ADD CONSTRAINT uq_payment_allocation_per_invoice
     UNIQUE (payment_id, invoice_id);
 
-DO $
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
@@ -112,7 +112,7 @@ BEGIN
         RAISE EXCEPTION 'Cross-school payment allocations exist; resolve before adding tenant foreign keys';
     END IF;
 END
-$;
+$$;
 
 ALTER TABLE public.payment_allocations
     ADD CONSTRAINT fk_payment_allocation_payment_school
