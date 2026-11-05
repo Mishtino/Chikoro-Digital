@@ -82,3 +82,22 @@ The feature branch now includes proposed attendance registers, class timetables 
 Composite tenant foreign keys are proposed for attendance sessions/records, timetable entries and class assignments. Supporting unique keys on `users`, `students`, `terms` and `subjects` are included in proposed SQL only. The relevant files remain outside `supabase/migrations/`; none of these migrations has been applied to staging or production. RLS is enabled in the proposals with no browser-facing policies, and the live Render role remains `postgres` with `BYPASSRLS=true`. Therefore these additions are not production-ready until a least-privilege API database role, migration validation, tenant-negative tests and direct browser-role RLS tests are completed.
 
 CI run `41998128269` passed API tests and both frontend builds for the attendance/timetable work. Class assignment and class-level authorization changes are under validation in subsequent CI runs. No production data, schema, environment variables, deployments or credentials were changed.
+
+
+## Updated production boundary and authentication review — 5 November 2026
+
+A second read-only check of the live Supabase project confirmed:
+
+- RLS remains enabled on all 21 public base tables. The only policy is authenticated SELECT on the caller's own `public.profiles` row; 20 tables still have no policies.
+- The live table-grant inventory returned no `anon` or `PUBLIC` table privileges. `authenticated` has SELECT on `public.profiles` only. The missing-policy Advisor findings therefore do not currently demonstrate direct browser access to the other 20 tables. They remain a hard blocker for a future non-BYPASSRLS API connection.
+- `postgres` has `BYPASSRLS`, database/role creation privileges, and membership in elevated roles including `service_role` and `supabase_privileged_role`. The `authenticator` login can assume `anon`, `authenticated` and `service_role`. Neither is an acceptable replacement runtime identity. Do not change Render's database URL before the RLS context, policies, exact grants and staging tests are complete.
+- Supabase Auth leaked-password protection remains disabled. Enable it in the project's Auth security settings and re-run Security Advisor.
+- The API's `admin_mfa_required` setting is not currently enforced by `get_supabase_principal`, and neither the Vortex login nor school portal login implements an MFA challenge/verify flow. Treat privileged-user MFA as **not implemented**, not as a control that is already active. A proper enrollment/challenge/verify flow and server-side `aal2` enforcement must be implemented and tested before claiming MFA protection. Do not simply turn on an API-only `aal2` rejection until the login flow can complete MFA, or existing administrators could be locked out.
+
+## Production startup configuration guard — 5 November 2026
+
+The working branch adds a fail-closed production settings validator in `api/app/config.py`. It rejects the known development JWT secret or a secret shorter than 32 characters, DEBUG enabled, a non-PostgreSQL production database URL, a non-HTTPS/non-origin Supabase URL, wildcard or non-HTTPS CORS origins, non-HTTPS Paynow return/result URLs, and missing Supabase secret configuration when private homework attachments are enabled. Unit tests cover accepted production settings and these unsafe configurations.
+
+This startup guard is an additional deployment safety check; it does not prove that Render currently has the correct environment values. Verify actual production environment settings without exposing their values, and confirm the CI run for the exact release SHA. The guard has not been deployed to Render.
+
+**No production schema, grants, roles, passwords, Auth settings, environment variables or deployments were changed during this review.**
