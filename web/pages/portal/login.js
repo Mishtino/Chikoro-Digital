@@ -1,6 +1,7 @@
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import Brand from '../../components/Brand';
 
 export default function PortalLogin() {
   const router = useRouter();
