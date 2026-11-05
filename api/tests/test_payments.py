@@ -264,3 +264,55 @@ def test_manual_payment_returns_conflict_for_duplicate_school_reference(
     payments = db_session.query(Payment).filter(Payment.school_id == school.id).all()
     assert len(payments) == 1
     assert payments[0].reference == "BANK-API-REF"
+
+
+
+def test_payment_reads_reject_mismatched_school_filter(client, db_session):
+    school = School(code="PAY008", name="Payment Tenant Scope")
+    other_school = School(code="PAY009", name="Other Payment Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    payments = client.get(f"/payments?school_id={other_school.id}")
+    invoices = client.get(f"/invoices?school_id={other_school.id}")
+
+    assert payments.status_code == 403
+    assert invoices.status_code == 403
+
+
+def test_payment_and_invoice_detail_reads_hide_other_school_records(client, db_session):
+    school = School(code="PAY010", name="Payment Detail Tenant")
+    other_school = School(code="PAY011", name="Other Payment Detail Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    student = Student(
+        school_id=other_school.id, student_number="PAY-OTHER-1",
+        first_name="Other", last_name="Tenant", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=other_school.id, student_id=student.id,
+        invoice_number="PAY-OTHER-INV", currency="USD", total=20,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    payment = Payment(
+        school_id=other_school.id, student_id=student.id,
+        amount=5, currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    invoice_response = client.get(f"/invoices/{invoice.id}")
+    payment_response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "cross-tenant test"},
+    )
+
+    assert invoice_response.status_code == 404
+    assert payment_response.status_code == 404
