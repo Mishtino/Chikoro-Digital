@@ -267,6 +267,82 @@ def test_manual_payment_returns_conflict_for_duplicate_school_reference(
 
 
 
+def test_voided_payment_is_excluded_from_invoice_paid_balance(client, db_session):
+    school = School(code="PAY010", name="Voided Payment Balance")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-VOID-1",
+        first_name="Void", last_name="Payment", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-VOID-INV", currency="USD", total=100,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    recorded = client.post(
+        "/payments",
+        json={"student_id": student.id, "amount": 60, "currency": "USD",
+              "method": "cash", "invoice_ids": [invoice.id]},
+    )
+    assert recorded.status_code == 201
+    payment_id = recorded.json()["payment_id"]
+
+    voided = client.post(
+        f"/payments/{payment_id}/void",
+        json={"reason": "Duplicate cash entry"},
+    )
+    assert voided.status_code == 200
+    assert voided.json() == {"status": "voided"}
+
+    db_session.refresh(invoice)
+    from app.services.money import invoice_balance
+    assert invoice_balance(db_session, invoice) == 100
+    payment = db_session.query(Payment).filter(Payment.id == payment_id).one()
+    assert payment.voided is True
+    assert payment.void_reason == "Duplicate cash entry"
+
+
+def test_voiding_a_payment_twice_is_rejected(client, db_session):
+    school = School(code="PAY011", name="Repeated Void Guard")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-VOID-2",
+        first_name="Repeat", last_name="Void", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-VOID-INV-2", currency="USD", total=30,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    recorded = client.post(
+        "/payments",
+        json={"student_id": student.id, "amount": 10, "currency": "USD",
+              "method": "cash", "invoice_ids": [invoice.id]},
+    )
+    assert recorded.status_code == 201
+    payment_id = recorded.json()["payment_id"]
+    first = client.post(f"/payments/{payment_id}/void", json={"reason": "Correction"})
+    second = client.post(f"/payments/{payment_id}/void", json={"reason": "Repeated correction"})
+
+    assert first.status_code == 200
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Already voided"
+
+
 def test_payment_reads_reject_mismatched_school_filter(client, db_session):
     school = School(code="PAY008", name="Payment Tenant Scope")
     other_school = School(code="PAY009", name="Other Payment Tenant")
