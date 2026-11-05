@@ -494,7 +494,9 @@ def test_marks_must_be_approved_before_publication_and_publish_is_one_way(
     client, db_session, seed_two_schools
 ):
     from app.models.results import Mark
-    from app.models.student import Student
+    from app.models.student import Student, Contact
+    from app.models.notification import Notification
+    from app.models.audit import AuditLog
 
     school = seed_two_schools["s1"]
     owner_user = seed_two_schools["u1"]
@@ -517,6 +519,12 @@ def test_marks_must_be_approved_before_publication_and_publish_is_one_way(
         entered_by_user_id=owner_user.id,
     )
     db_session.add(draft)
+    db_session.flush()
+    db_session.add(Contact(
+        school_id=school.id, student_id=student.id, name="Parent Contact",
+        relationship="parent", email="parent@example.test", phone="+263770000001",
+        is_primary=True,
+    ))
     db_session.commit()
 
     owner = SupabasePrincipal(
@@ -540,8 +548,26 @@ def test_marks_must_be_approved_before_publication_and_publish_is_one_way(
     db_session.refresh(draft)
     assert draft.status == "published"
     assert draft.published_at is not None
+    queued = db_session.query(Notification).filter(
+        Notification.school_id == school.id,
+        Notification.dedupe_key.in_([
+            f"results-published:{assessment.id}:{student.id}:email",
+            f"results-published:{assessment.id}:{student.id}:sms",
+        ]),
+    ).all()
+    assert {item.channel for item in queued} == {"email", "sms"}
+    assert all(item.status == "queued" for item in queued)
+    assert db_session.query(AuditLog).filter_by(
+        school_id=school.id, action="marks.publish", entity_id=str(assessment.id)
+    ).count() == 1
 
     repeated = client.post("/results/marks/publish", params={"assessment_id": assessment.id})
     assert repeated.status_code == 409
     db_session.refresh(draft)
     assert draft.status == "published"
+    assert db_session.query(Notification).filter(
+        Notification.dedupe_key.like(f"results-published:{assessment.id}:%")
+    ).count() == 2
+    assert db_session.query(AuditLog).filter_by(
+        school_id=school.id, action="marks.publish", entity_id=str(assessment.id)
+    ).count() == 1
