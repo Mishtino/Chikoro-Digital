@@ -102,3 +102,27 @@ def test_student_profile_update_is_school_scoped_and_admin_only(client, seed_two
     _set_principal(teacher, data["s1"].id, role="teacher")
     forbidden = client.patch(f"/students/{student_id}", json={"form": "Form 4"})
     assert forbidden.status_code == 403
+
+
+def test_student_directory_reports_portal_linkage_without_exposing_email(client, seed_two_schools):
+    data = seed_two_schools
+    _set_principal(data["u1"], data["s1"].id)
+
+    without_portal = client.post("/students", json={
+        "first_name": "No", "last_name": "Portal",
+    })
+    with_portal = client.post("/students", json={
+        "first_name": "Has", "last_name": "Portal",
+        "student_email": "learner.portal@example.com",
+    })
+    assert without_portal.status_code == 201
+    assert with_portal.status_code == 201
+    assert without_portal.json()["portal_enabled"] is False
+    assert with_portal.json()["portal_enabled"] is True
+
+    directory = client.get("/students")
+    assert directory.status_code == 200
+    rows = {row["id"]: row for row in directory.json()}
+    assert rows[without_portal.json()["id"]]["portal_enabled"] is False
+    assert rows[with_portal.json()["id"]]["portal_enabled"] is True
+    assert "portal_email" not in rows[with_portal.json()["id"]]
