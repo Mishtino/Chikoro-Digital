@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { api } from '../../lib/api';
+import { api, API_BASE } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
 
 export default function StudentHomeworkPortal() {
@@ -110,6 +110,28 @@ export default function StudentHomeworkPortal() {
     }
   }
 
+
+  async function downloadMyReportCard() {
+    setError('');
+    try {
+      const { data, error: sessionError } = await getSupabaseBrowserClient().auth.getSession();
+      if (sessionError || !data.session?.access_token) throw new Error('Please sign in again to download your report.');
+      const response = await fetch(API_BASE + '/portal/results/pdf', {
+        headers: { Authorization: 'Bearer ' + data.session.access_token },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || 'Your report card could not be downloaded.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = 'my-report-card.pdf';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) { setError(err.message || 'Your report card could not be downloaded.'); }
+  }
+
   async function logout() {
     await getSupabaseBrowserClient().auth.signOut();
     router.replace('/portal/login');
@@ -121,7 +143,10 @@ export default function StudentHomeworkPortal() {
     <section className="card">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div><p style={{ margin: 0, opacity: .7 }}>CHIKORO DIGITAL · STUDENT PORTAL</p><h1 style={{ margin: '8px 0' }}>My homework</h1><p style={{ margin: 0 }}>View class assignments, submit your work and read teacher feedback.</p></div>
-        <button type="button" onClick={logout}>Log out</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={downloadMyReportCard}>Download report card</button>
+          <button type="button" onClick={logout}>Log out</button>
+        </div>
       </header>
       {error && <p role="alert" style={{ color: '#b42318', marginTop: 18 }}>{error}</p>}
       {notice && <p role="status" style={{ color: '#067647', marginTop: 18 }}>{notice}</p>}
