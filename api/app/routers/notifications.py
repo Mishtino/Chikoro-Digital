@@ -11,7 +11,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
@@ -22,7 +22,7 @@ def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
 
 @router.get("")
 def list_notifications(school_id: Optional[int] = Query(None), status_filter: Optional[str] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Notification).filter(Notification.school_id == sid)
@@ -33,7 +33,7 @@ def list_notifications(school_id: Optional[int] = Query(None), status_filter: Op
 
 @router.post("/process")
 def process_notifications(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+    if not principal.is_platform_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
     # Do not mark queued records as sent until a real email/SMS/push provider
     # is configured and delivery outcomes can be recorded truthfully.
