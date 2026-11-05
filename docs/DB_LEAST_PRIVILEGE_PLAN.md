@@ -18,7 +18,7 @@ A replacement runtime identity is required, but changing the connection string b
 - The current database role is `postgres`: `rolsuper = false`, `rolbypassrls = true`.
 - All 21 public base tables have RLS enabled; none currently has FORCE ROW LEVEL SECURITY.
 - Only `public.profiles` has a policy, for `SELECT` by `authenticated` where `auth.uid() = id`.
-- The other 20 public tables have no policies. This is fail-closed for Data API roles, but it also means a normal non-bypass runtime role cannot yet serve the existing API.
+- The other 20 public tables have no policies. A fresh grant audit also found that `anon` has no table-level DML privileges on any public base table, and `authenticated` has table-level access only to `profiles` (SELECT); neither role has CREATE on the public schema. This is fail-closed for browser Data API access, but it also means a normal non-bypass runtime role cannot yet serve the existing API.
 - The `public` schema currently grants CREATE to `postgres`; the API runtime must not receive CREATE, ownership, ALTER, DROP, TRUNCATE, TRIGGER, or REFERENCES privileges.
 - The API performs read-only lookups in `auth.users` for verified email and account activation. It must not receive broad write privileges on the Auth schema.
 - The only trigger discovered in `public`/ `auth` is `auth.users` AFTER INSERT calling `private.handle_new_auth_user()`. That function is SECURITY DEFINER, owned by `postgres`, and uses `search_path = pg_catalog, public`; it inserts a pending profile. The API runtime should not receive access to the `private` schema or EXECUTE rights on this trigger function.
