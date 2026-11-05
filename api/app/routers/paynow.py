@@ -311,10 +311,14 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         additional_info=f"School {school.code}",
     )
 
-    if resp.get("status", "").lower() != "ok":
+    response_status = resp.get("status") or resp.get("Status") or ""
+    if str(response_status).lower() != "ok":
         attempt.status = "failed"
         db.commit()
-        raise HTTPException(status_code=400, detail=resp.get("error") or "Paynow initiation failed")
+        raise HTTPException(
+            status_code=400,
+            detail=resp.get("error") or resp.get("Error") or "Paynow initiation failed",
+        )
 
     # Paynow requires the initiation response hash to be verified before
     # redirecting a customer to the provider-returned checkout URL.
