@@ -10,6 +10,7 @@ export default function ParentPortal() {
   const [selectedId, setSelectedId] = useState('');
   const [fees, setFees] = useState(null);
   const [results, setResults] = useState(null);
+  const [comparison, setComparison] = useState(null);
   const [attendance, setAttendance] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -58,6 +59,7 @@ export default function ParentPortal() {
       if (!selectedId) {
         setFees(null);
         setResults(null);
+        setComparison(null);
         setAttendance(null);
         setTerms([]);
         setSelectedTermId('');
@@ -68,6 +70,7 @@ export default function ParentPortal() {
       setError('');
       setFees(null);
       setResults(null);
+      setComparison(null);
       setAttendance(null);
       setTerms([]);
       setSelectedTermId('');
@@ -105,8 +108,11 @@ export default function ParentPortal() {
       setResults(null);
       try {
         const query = selectedTermId ? '?term_id=' + encodeURIComponent(selectedTermId) : '';
-        const resultData = await api('/portal/parent/children/' + selectedId + '/report-card' + query);
-        if (active) setResults(resultData);
+        const [resultData, comparisonData] = await Promise.all([
+          api('/portal/parent/children/' + selectedId + '/report-card' + query),
+          api('/portal/parent/children/' + selectedId + '/results/comparison' + query),
+        ]);
+        if (active) { setResults(resultData); setComparison(comparisonData); }
       } catch (err) {
         if (active) setError(err.message);
       }
@@ -302,10 +308,29 @@ export default function ParentPortal() {
 
       {!!selectedId && <section className="card" style={{ marginTop: 18 }}><ParentHomeworkPanel studentId={selectedId} /></section>}
 
+      {comparison && <section className="card" style={{ marginTop: 18 }}>
+        <h2>Term-to-term performance</h2>
+        <p style={{ color: '#64748b' }}>
+          {comparison.current_term ? comparison.current_term.name + ' · ' + comparison.current_term.academic_year : 'No published results'}
+          {comparison.previous_term ? ' compared with ' + comparison.previous_term.name + ' · ' + comparison.previous_term.academic_year : ' · No earlier published term to compare'}
+        </p>
+        {!!comparison.subjects.length && <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+            <thead><tr><th align="left">Subject</th><th align="right">Current</th><th align="right">Previous</th><th align="right">Change</th></tr></thead>
+            <tbody>{comparison.subjects.map(subject => <tr key={subject.subject_id}>
+              <td>{subject.subject}</td>
+              <td align="right">{subject.current_average == null ? '—' : Number(subject.current_average).toFixed(1) + '%'}</td>
+              <td align="right">{subject.previous_average == null ? '—' : Number(subject.previous_average).toFixed(1) + '%'}</td>
+              <td align="right">{subject.change == null ? '—' : (subject.change > 0 ? '+' : '') + Number(subject.change).toFixed(1) + ' pp'}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+      </section>}
+
       {results && <section className="card" style={{ marginTop: 18 }}>
         <h2>Published results</h2>
         {!results.subjects.length && <p>No results have been published for this learner yet.</p>}
-        {results.subjects.map(subject => <div key={subject.subject} style={{ borderTop: '1px solid #e5e7eb', padding: '12px 0' }}>
+        {results.subjects.map(subject => <div key={subject.subject_id} style={{ borderTop: '1px solid #e5e7eb', padding: '12px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{subject.subject}</strong><strong>{Number(subject.average).toFixed(1)}%</strong></div>
           <ul>{subject.assessments.map(item => <li key={item.name}>{item.name}: {item.score} / {item.max}</li>)}</ul>
         </div>)}
