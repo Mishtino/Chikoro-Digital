@@ -364,3 +364,61 @@ def test_report_card_pdf_is_downloadable_and_contains_only_published_results(cli
     assert 'attachment; filename="report-card-PDF-001.pdf"' == response.headers["content-disposition"]
     assert response.content.startswith(b"%PDF")
 
+def test_subject_trends_are_term_ordered_and_teacher_class_scoped(client, db_session, seed_two_schools):
+    from datetime import date
+    from app.models.student import Student
+    from app.models.results import Mark
+    from app.models.class_assignment import ClassTeacherAssignment
+
+    school = seed_two_schools["s1"]
+    teacher_user = seed_two_schools["u1"]
+    term_one = Term(school_id=school.id, name="Term 1", academic_year="2026",
+                    start_date=date(2026, 1, 1))
+    term_two = Term(school_id=school.id, name="Term 2", academic_year="2026",
+                    start_date=date(2026, 5, 1))
+    subject = Subject(school_id=school.id, name="Science")
+    db_session.add_all([term_one, term_two, subject])
+    db_session.flush()
+    learner = Student(school_id=school.id, student_number="TREND-1",
+                      first_name="Tariro", last_name="Moyo",
+                      form="Form 1", status="active")
+    other = Student(school_id=school.id, student_number="TREND-2",
+                    first_name="Tendai", last_name="Ncube",
+                    form="Form 2", status="active")
+    db_session.add_all([learner, other])
+    db_session.flush()
+    assessments = [
+        Assessment(school_id=school.id, subject_id=subject.id, term_id=term_one.id,
+                   name="T1", weight=1, max_score=100),
+        Assessment(school_id=school.id, subject_id=subject.id, term_id=term_two.id,
+                   name="T2", weight=1, max_score=100),
+    ]
+    db_session.add_all(assessments)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[0].id,
+             score=60, status="published"),
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[1].id,
+             score=80, status="published"),
+        Mark(school_id=school.id, student_id=other.id, assessment_id=assessments[1].id,
+             score=20, status="published"),
+    ])
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 1", teacher_user_id=teacher_user.id,
+        assigned_by_user_id=teacher_user.id, is_active=True,
+    ))
+    db_session.commit()
+    teacher = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=teacher_user.id,
+        school_id=school.id, role="teacher", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: teacher
+    response = client.get("/results/analytics/subject-trends", params={"subject_id": subject.id})
+    assert response.status_code == 200
+    rows = response.json()["trends"]
+    assert len(rows) == 2
+    assert [row["average_percent"] for row in rows] == [60, 80]
+    assert {row["class_name"] for row in rows} == {"Form 1"}
+    denied = client.get("/results/analytics/subject-trends", params={"class_name": "Form 2"})
+    assert denied.status_code == 403
+
