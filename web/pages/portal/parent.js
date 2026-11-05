@@ -9,6 +9,7 @@ export default function ParentPortal() {
   const [selectedId, setSelectedId] = useState('');
   const [fees, setFees] = useState(null);
   const [results, setResults] = useState(null);
+  const [attendance, setAttendance] = useState(null);
   const [terms, setTerms] = useState([]);
   const [selectedTermId, setSelectedTermId] = useState('');
   const [termsLoaded, setTermsLoaded] = useState(false);
@@ -48,6 +49,7 @@ export default function ParentPortal() {
       if (!selectedId) {
         setFees(null);
         setResults(null);
+        setAttendance(null);
         setTerms([]);
         setSelectedTermId('');
         setTermsLoaded(false);
@@ -57,17 +59,20 @@ export default function ParentPortal() {
       setError('');
       setFees(null);
       setResults(null);
+      setAttendance(null);
       setTerms([]);
       setSelectedTermId('');
       setTermsLoaded(false);
       setPaymentError('');
       try {
-        const [feeData, termData] = await Promise.all([
+        const [feeData, termData, attendanceData] = await Promise.all([
           api('/portal/parent/children/' + selectedId + '/fee-status'),
           api('/portal/parent/children/' + selectedId + '/terms'),
+          api('/portal/parent/children/' + selectedId + '/attendance'),
         ]);
         if (active) {
           setFees(feeData);
+          setAttendance(attendanceData);
           const availableTerms = termData.terms || [];
           setTerms(availableTerms);
           setSelectedTermId(availableTerms.length ? String(availableTerms[0].id) : '');
@@ -158,6 +163,25 @@ export default function ParentPortal() {
             <tbody>{fees.invoices.map(invoice => <tr key={invoice.invoice_number}><td>{invoice.invoice_number}</td><td align="right">{Number(invoice.total).toFixed(2)} {invoice.currency}</td><td align="right">{Number(invoice.balance).toFixed(2)} {invoice.currency}</td></tr>)}</tbody>
           </table>
         </div>
+      </section>}
+
+      {attendance && <section className="card" style={{ marginTop: 18 }}>
+        <h2>Attendance summary</h2>
+        <p style={{ color: '#64748b' }}>Based on submitted class registers only. Draft registers are not visible to parents.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))', gap: 12, margin: '16px 0' }}>
+          <div><strong style={{ display: 'block', fontSize: 24 }}>{attendance.summary.attendance_rate == null ? '—' : attendance.summary.attendance_rate + '%'}</strong><span>Attendance rate</span></div>
+          <div><strong style={{ display: 'block', fontSize: 24 }}>{attendance.summary.present}</strong><span>Present</span></div>
+          <div><strong style={{ display: 'block', fontSize: 24 }}>{attendance.summary.absent}</strong><span>Absent</span></div>
+          <div><strong style={{ display: 'block', fontSize: 24 }}>{attendance.summary.late}</strong><span>Late</span></div>
+          <div><strong style={{ display: 'block', fontSize: 24 }}>{attendance.summary.excused}</strong><span>Excused</span></div>
+        </div>
+        {!attendance.records.length ? <p>No submitted attendance records are available yet.</p> : <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th align="left">Date</th><th align="left">Class</th><th align="left">Status</th><th align="left">Note</th></tr></thead>
+            <tbody>{attendance.records.map((record, index) => <tr key={record.date + '-' + index}><td>{record.date}</td><td>{record.class_name}</td><td style={{ textTransform: 'capitalize' }}>{record.status}</td><td>{record.note || '—'}</td></tr>)}</tbody>
+          </table>
+          {attendance.records_limited && <p style={{ color: '#64748b' }}>Showing the latest 100 records.</p>}
+        </div>}
       </section>}
 
       {results && <section className="card" style={{ marginTop: 18 }}>
