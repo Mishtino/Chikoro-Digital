@@ -87,7 +87,7 @@ class StudentCreateResult(StudentOut):
 
 
 def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required for admin")
         return requested
@@ -239,7 +239,7 @@ def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: S
 
 @router.get("", response_model=List[StudentOut])
 def list_students(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    sid = _school_id(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _school_id(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     student_query = db.query(Student).filter(Student.school_id == sid)
