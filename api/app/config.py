@@ -43,9 +43,9 @@ def validate_production_settings(config: Settings) -> None:
 
     supabase = urlsplit((config.supabase_url or "").strip())
     try:
-        supabase_port = supabase.port
+        supabase.port
     except ValueError:
-        supabase_port = None
+        pass
         errors.append("SUPABASE_URL must contain a valid port in production")
     if (
         supabase.scheme != "https"
