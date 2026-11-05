@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 from app.models.student import Student, Contact
+from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.payment import Invoice
 from app.services.money import invoice_balance
 
@@ -213,6 +215,70 @@ def parent_child_terms(student_id: int, principal: SupabasePrincipal = Depends(g
         ]
     }
 
+
+
+
+@router.get("/parent/children/{student_id}/attendance")
+def parent_child_attendance(
+    student_id: int,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    """Return submitted attendance only for a verified, linked learner."""
+    student = _parent_student(principal, student_id, db)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be on or before to_date")
+
+    query = db.query(AttendanceRecord, AttendanceSession).join(
+        AttendanceSession,
+        (AttendanceSession.id == AttendanceRecord.session_id)
+        & (AttendanceSession.school_id == AttendanceRecord.school_id),
+    ).filter(
+        AttendanceRecord.school_id == student.school_id,
+        AttendanceRecord.student_id == student.id,
+        AttendanceSession.school_id == student.school_id,
+        AttendanceSession.status == "submitted",
+    )
+    if from_date:
+        query = query.filter(AttendanceSession.attendance_date >= from_date)
+    if to_date:
+        query = query.filter(AttendanceSession.attendance_date <= to_date)
+
+    rows = query.order_by(
+        AttendanceSession.attendance_date.desc(),
+        AttendanceSession.id.desc(),
+    ).limit(100).all()
+    counts = {"present": 0, "absent": 0, "late": 0, "excused": 0}
+    records = []
+    for record, session in rows:
+        if record.status in counts:
+            counts[record.status] += 1
+        records.append({
+            "date": session.attendance_date.isoformat(),
+            "class_name": session.class_name,
+            "status": record.status,
+            "note": record.note,
+        })
+    total = len(records)
+    return {
+        "student_id": student.id,
+        "student_number": student.student_number,
+        "name": f"{student.first_name} {student.last_name}",
+        "summary": {
+            "total_recorded_days": total,
+            "present": counts["present"],
+            "absent": counts["absent"],
+            "late": counts["late"],
+            "excused": counts["excused"],
+            "attendance_rate": round(
+                (counts["present"] + counts["late"]) / total * 100, 1
+            ) if total else None,
+        },
+        "records": records,
+        "records_limited": total == 100,
+    }
 
 @router.post("/register", status_code=status.HTTP_410_GONE)
 def portal_register():
