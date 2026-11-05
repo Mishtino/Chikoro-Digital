@@ -9,6 +9,7 @@ export default function AcademicAnalytics() {
   const [terms, setTerms] = useState([]);
   const [termId, setTermId] = useState('current');
   const [rows, setRows] = useState([]);
+  const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -40,8 +41,11 @@ export default function AcademicAnalytics() {
         const selected = current ? String(current.id) : 'all';
         setTermId(selected);
         const query = selected !== 'all' ? '?term_id=' + selected : '';
-        const result = await api('/results/analytics/class-performance' + query);
-        if (active) setRows(result.results || []);
+        const [result, trendResult] = await Promise.all([
+          api('/results/analytics/class-performance' + query),
+          api('/results/analytics/subject-trends'),
+        ]);
+        if (active) { setRows(result.results || []); setTrends(trendResult.trends || []); }
       } catch (e) { if (active) setError(e.message || 'Unable to load academic analytics.'); }
       finally { if (active) setLoading(false); }
     }
@@ -77,6 +81,23 @@ export default function AcademicAnalytics() {
             <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.pass_rate_percent == null ? '—' : Number(row.pass_rate_percent).toFixed(1) + '%'}</td>
           </tr>)}</tbody>
         </table></div>}
+      </section>
+      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 20, marginTop: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 19 }}>Subject performance trends</h2>
+        <p style={{ color: '#64748b', margin: '5px 0 14px', fontSize: 13 }}>Published marks across terms, grouped by subject and class.</p>
+        {!trends.length ? <p style={{ color: '#64748b' }}>No published subject trends are available yet.</p> : <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 680 }}>
+            <thead><tr>{['Term', 'Class', 'Subject', 'Learners', 'Average', 'Pass rate'].map(label => <th key={label} style={{ padding: 11, borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: 12 }}>{label}</th>)}</tr></thead>
+            <tbody>{trends.map((row, index) => <tr key={row.term_id + '-' + row.subject_id + '-' + row.class_name + '-' + index}>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.term_name} · {row.academic_year}</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.class_name || 'Unassigned'}</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.subject_name}</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.learner_count}</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{Number(row.average_percent).toFixed(1)}%</td>
+              <td style={{ padding: 11, borderBottom: '1px solid #edf1f5' }}>{row.pass_rate_percent == null ? '—' : Number(row.pass_rate_percent).toFixed(1) + '%'}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
       </section>
     </div>
   </main>;
