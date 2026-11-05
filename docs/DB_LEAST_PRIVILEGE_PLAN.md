@@ -78,3 +78,18 @@ The matrix must cover all API routers, shared services, startup code, scheduled 
 This plan is not permission to make production changes. Do not create the role, apply RLS policies or grants, change Render's `DATABASE_URL`, or apply pending migrations until the table/route inventory is complete, staging validation passes, and the production cutover is explicitly approved.
 
 At release time, deploy the database changes first in a backward-compatible manner, then API code and environment configuration, then web/admin frontends, and finally run smoke tests and verify the actual deployed commit on Render and every Vercel project. Do not merge or push release commits to `main` until the coordinated release window is confirmed because Render auto-deploys from `main`.
+
+## Follow-up live grant and staging-environment check — 5 November 2026
+
+A fresh read-only query of information_schema.role_table_grants confirms:
+
+- `anon` has no table-level privileges on the audited public tables.
+- `authenticated` has SELECT only on `public.profiles`, preserving the own-profile browser path.
+- `service_role` has broad table privileges and remains unsuitable as the API runtime because it bypasses RLS.
+- `postgres` retains owner-level table privileges; the deployed API must not be assumed to be least-privileged merely because browser grants are locked down.
+
+The current Security Advisor still reports 20 RLS-enabled tables without policies and leaked-password protection disabled. The missing-policy findings do not, by themselves, prove anonymous exposure: the separate grant audit confirms `anon` has no table privileges. They remain a required control-design item before a no-BYPASSRLS runtime cutover.
+
+Environment discovery found the Chikoro Prod project and a separate project named `orderdesk-db`; the Chikoro Prod project currently has no Supabase development branches. `orderdesk-db` has not been verified or designated as Chikoro staging and must not be used for migration validation without an explicit environment mapping. There is therefore no confirmed staging target available for applying or validating the proposed migrations.
+
+No database DDL, grants, role changes, Auth configuration, Render environment changes, or production data changes were made during this follow-up.
