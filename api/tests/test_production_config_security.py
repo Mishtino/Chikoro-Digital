@@ -13,6 +13,8 @@ def safe_production_settings():
         supabase_url="https://example-project.supabase.co",
         supabase_secret_key="test-service-secret",
         cors_origins="https://school.example.com,https://admin.example.com",
+        paynow_return_url="https://school.example.com/paynow/return",
+        paynow_result_url="https://api.example.com/paynow/webhook",
         homework_attachments_enabled=True,
     )
 
