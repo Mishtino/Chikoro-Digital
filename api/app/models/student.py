@@ -27,6 +27,10 @@ class Student(Base):
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
+    @property
+    def portal_enabled(self):
+        return self.portal_user_id is not None
+
     __table_args__ = (UniqueConstraint("school_id", "student_number", name="uq_student_number_per_school"),)
 
 
