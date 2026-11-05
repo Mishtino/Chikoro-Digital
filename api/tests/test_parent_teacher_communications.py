@@ -128,7 +128,7 @@ def test_parent_teacher_conversation_rejects_empty_message_and_closed_thread(
     db_session.add(conversation)
     db_session.commit()
 
-    monkeypatch.setattr(portal, "_parent_student", lambda _principal, sid, _db: learner)
+    monkeypatch.setattr(parent_teacher, "_parent_student", lambda _principal, sid, _db: learner)
     app.dependency_overrides[get_supabase_principal] = lambda: principal(parent, school)
 
     empty = client.post(
