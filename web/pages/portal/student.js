@@ -82,7 +82,7 @@ export default function StudentHomeworkPortal() {
       });
       const uploaded = await fetch(signed.upload_url, {
         method: 'PUT',
-        headers: { 'Content-Type': file.type },
+        headers: { 'Content-Type': file.type, 'x-upsert': 'false' },
         body: file,
       });
       if (!uploaded.ok) throw new Error('The file could not be uploaded to secure storage.');
