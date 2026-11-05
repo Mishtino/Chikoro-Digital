@@ -24,6 +24,7 @@ Official documentation:
 - HTTP redirects are disabled for poll requests.
 - Provider-returned checkout and polling URLs must use HTTPS and the exact documented host `www.paynow.co.zw`, with the default HTTPS port only.
 - Initiation responses must pass hash verification before checkout/poll URLs are persisted or returned to a browser.
+- The response parser accepts Paynow's documented capitalized fields (for example `Status`, `BrowserUrl`, `PollUrl`, `Hash`) as well as lowercase variants.
 - Tests cover POST usage, disabled redirects, unverified initiation signatures, and rejection of lookalike/noncanonical hosts.
 
 ## Compatibility item to confirm with Paynow
