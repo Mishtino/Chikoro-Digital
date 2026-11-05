@@ -300,6 +300,8 @@ def parent_child_assignments(
     return {"assignments": [
         {**_assignment_out(a, subject),
          "submission_status": submission.status if submission else "not_submitted",
+         "submission_id": submission.id if submission else None,
+         "attachments": _ready_attachment_out(db, student.school_id, submission.id) if submission else [],
          "submitted_at": submission.submitted_at.isoformat() if submission else None,
          "feedback": submission.feedback if submission else None,
          "score": float(submission.score) if submission and submission.score is not None else None}
