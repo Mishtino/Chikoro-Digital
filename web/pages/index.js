@@ -10,6 +10,6 @@ export default function Home() {
       <div className="field"><label htmlFor="home-school-code">School code</label><input id="home-school-code" value={code} onChange={e=>setCode(e.target.value)} placeholder="e.g. CHK001" required /></div>
       <button className="auth-button" type="submit">Continue to my school</button>
     </form>
-    <p style={{fontSize:13,marginTop:24}}>School administrator? <a href="/admin/register">Administrator account setup</a></p>
+    <p style={{fontSize:13,marginTop:24}}>School administrator? Contact your authorised platform administrator to request an invitation.</p>
   </section></main>;
 }
