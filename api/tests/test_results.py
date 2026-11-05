@@ -73,6 +73,7 @@ def test_bulk_marks_reject_duplicate_learner_assessment_pairs(client, seed_two_s
 
 def test_bulk_marks_allow_same_learner_in_different_assessments(client, seed_two_schools, db_session):
     from app.models.student import Student
+    from app.models.class_assignment import ClassTeacherAssignment
 
     school = seed_two_schools["s1"]
     principal = SupabasePrincipal(
@@ -87,6 +88,7 @@ def test_bulk_marks_allow_same_learner_in_different_assessments(client, seed_two
         student_number="ST-RESULTS-001",
         first_name="Tariro",
         last_name="Moyo",
+        form="Form 1",
         status="active",
     )
     subject = Subject(school_id=school.id, name="Mathematics", code="MATH")
@@ -99,6 +101,11 @@ def test_bulk_marks_allow_same_learner_in_different_assessments(client, seed_two
         school_id=school.id, subject_id=subject.id, name="Test 2", weight=1, max_score=100
     )
     db_session.add_all([assessment_one, assessment_two])
+    db_session.add(ClassTeacherAssignment(
+        school_id=school.id, class_name="Form 1",
+        teacher_user_id=principal.user_id,
+        assigned_by_user_id=seed_two_schools["u1"].id, is_active=True,
+    ))
     db_session.commit()
     app.dependency_overrides[get_supabase_principal] = lambda: principal
 
