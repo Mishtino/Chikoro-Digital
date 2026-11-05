@@ -188,7 +188,7 @@ def update_settings(payload: PaynowSettingsUpdate, principal: SupabasePrincipal 
     school.paynow_integration_id = payload.integration_id
     school.paynow_integration_key = encrypt(payload.integration_key)
     school.paynow_test_mode = payload.test_mode
-    db.commit()
+    db.flush()
     write_audit(db, principal, "paynow.settings.update", "school", school.id, {}, school_id=sid)
     return {"status": "updated"}
 
