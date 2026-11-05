@@ -6,6 +6,30 @@ DO $homework$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_users_school_id_id'
+      AND conrelid = 'public.users'::regclass
+  ) THEN
+    ALTER TABLE public.users
+      ADD CONSTRAINT uq_users_school_id_id UNIQUE (school_id, id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_students_school_id_id'
+      AND conrelid = 'public.students'::regclass
+  ) THEN
+    ALTER TABLE public.students
+      ADD CONSTRAINT uq_students_school_id_id UNIQUE (school_id, id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_terms_school_id_id'
+      AND conrelid = 'public.terms'::regclass
+  ) THEN
+    ALTER TABLE public.terms
+      ADD CONSTRAINT uq_terms_school_id_id UNIQUE (school_id, id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
     WHERE conname = 'uq_subjects_school_id_id'
       AND conrelid = 'public.subjects'::regclass
   ) THEN
