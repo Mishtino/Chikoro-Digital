@@ -32,7 +32,8 @@ The 21 public tables are all represented in the map above, but this first pass d
 - `profiles` and `guardian_links` are accessed through raw SQL, so their operation set must be checked statement by statement.
 - Some endpoints commit multiple times and then write audit events. Any transaction-local RLS context must be tested across those commits.
 - Platform-wide operations (school directory, Vortex staff, audit) need explicit policy treatment that does not accidentally grant school users cross-tenant visibility.
-- Authentication bootstrap and student/parent activation are not ordinary school-scoped endpoints; they require dedicated policy tests.
+- Authentication bootstrap and student/parent activation are not ordinary school-scoped endpoints; they require dedicated policy tests. Current source confirms these paths directly query `auth.users`; prefer Supabase Auth user/Admin API lookups rather than broad database grants.
+- The Paynow webhook has no Supabase principal and performs lookup/settlement; reconciliation scans across schools under a platform-owner route. Both need separate narrowly scoped database access boundaries.
 - The API uses both SQLAlchemy ORM and raw SQL. A grep-only inventory is insufficient to finalize grants.
 
 ## Initial privilege boundaries
@@ -49,7 +50,7 @@ The 21 public tables are all represented in the map above, but this first pass d
 
 ## RLS and tenant context
 
-A dedicated role with `BYPASSRLS = false` cannot be switched into production safely while 20 public tables still have no policies. Before cutover, define trusted request context from the verified Supabase principal, and policies for every tenant-owned table and relationship. Cover school-scoped users, students, parents/guardian links, and Vortex platform roles separately. Test both positive and negative cross-school access.
+A dedicated role with `BYPASSRLS = false` cannot be switched into production safely while 20 public tables still have no policies. The built-in Supabase `service_role` also has `BYPASSRLS = true` and must not be used as a shortcut. The current SQLAlchemy Session has no request-context setup; verified JWT subject context must be set before own-profile resolution and reapplied after every new transaction. Before cutover, define trusted request context from the verified Supabase principal, and policies for every tenant-owned table and relationship. Cover school-scoped users, students, parents/guardian links, and Vortex platform roles separately. Test both positive and negative cross-school access.
 
 Do not solve this by granting the runtime role `BYPASSRLS` and calling the result RLS hardening. A no-bypass role plus deliberate RLS policies is the target. Also do not assume that adding a role or policies alone protects against arbitrary SQL injection; parameterized SQL, safe query construction, least privilege, and application authorization remain required.
 
@@ -64,4 +65,4 @@ Do not solve this by granting the runtime role `BYPASSRLS` and calling the resul
 - [ ] Runtime grants are generated from the final matrix, not blanket defaults.
 - [ ] Render connection switch and rollback rehearsed in staging.
 
-See [DB_LEAST_PRIVILEGE_PLAN.md](DB_LEAST_PRIVILEGE_PLAN.md) for live observations, target architecture and release gates.
+See [DB_LEAST_PRIVILEGE_PLAN.md](DB_LEAST_PRIVILEGE_PLAN.md) for live observations, target architecture and release gates, and [RLS_POLICY_DESIGN.md](RLS_POLICY_DESIGN.md) for exceptional-path and request-context design.
