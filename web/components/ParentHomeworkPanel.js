@@ -14,6 +14,16 @@ export default function ParentHomeworkPanel({ studentId }) {
     return () => { active = false; };
   }, [studentId]);
 
+
+  async function downloadAttachment(attachmentId) {
+    try {
+      const result = await api('/homework/attachments/' + attachmentId + '/download-url', { method: 'POST' });
+      window.open(result.download_url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setError(e.message || 'Attachment could not be opened.');
+    }
+  }
+
   return <section style={{ marginTop: 24 }}>
     <h2>Homework and assignment status</h2>
     <p style={{ color: '#64748b' }}>Published work and submission progress for this learner.</p>
@@ -29,6 +39,7 @@ export default function ParentHomeworkPanel({ studentId }) {
       <p style={{ color: '#64748b', fontSize: 13 }}>Due: {item.due_at ? new Date(item.due_at).toLocaleString() : 'No deadline set'}</p>
       {item.score !== null && item.score !== undefined && <p><strong>Score:</strong> {item.score}</p>}
       {item.feedback && <p><strong>Teacher feedback:</strong> {item.feedback}</p>}
+      {!!item.attachments?.length && <div><strong>Submitted files</strong><ul>{item.attachments.map(file => <li key={file.id}><button type="button" onClick={() => downloadAttachment(file.id)} style={{ border: 0, background: 'none', color: '#2457c5', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>{file.filename}</button></li>)}</ul></div>}
     </article>)}
   </section>;
 }
