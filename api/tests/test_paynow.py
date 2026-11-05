@@ -387,6 +387,7 @@ def test_initiation_rejects_untrusted_provider_checkout_url(
         paynow, "initiate_transaction",
         lambda **_kwargs: {
             "status": "Ok",
+            "hash_verified": True,
             "BrowserUrl": "https://attacker.example/checkout",
             "PollUrl": "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
         },
@@ -773,3 +774,58 @@ def test_paynow_student_balance_aggregation_preserves_decimal_cents(db_session):
 
     from decimal import Decimal
     assert paynow._student_usd_balance(db_session, school.id, student.id) == Decimal("0.30")
+
+
+def test_initiation_rejects_unverified_provider_response_before_returning_checkout(
+    client, db_session, monkeypatch
+):
+    school = School(
+        code="PN017", name="Unverified Initiation Response",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.flush()
+    user = User(
+        email="unverified-initiation@example.test", full_name="Unverified Initiation",
+        password_hash="unused", role="student", school_id=school.id,
+    )
+    db_session.add(user)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PN-INIT-VERIFY", first_name="Unverified",
+        last_name="Initiation", status="active", portal_user_id=user.id,
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id, invoice_number="PN-INIT-VERIFY-INV",
+        currency="USD", total=20, status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _student_principal(
+        user.id, school.id
+    )
+    monkeypatch.setattr(
+        paynow, "initiate_transaction",
+        lambda **_kwargs: {
+            "status": "Ok",
+            "hash_verified": False,
+            "BrowserUrl": "https://www.paynow.co.zw/Payment/Confirm/123",
+            "PollUrl": "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
+        },
+    )
+
+    response = client.post(
+        "/paynow/initiate",
+        json={"invoice_ids": [invoice.id], "amount": 10},
+    )
+
+    assert response.status_code == 502
+    assert "unverified checkout response" in response.json()["detail"]
+    attempt = db_session.query(PaynowAttempt).one()
+    assert attempt.status == "failed"
+    assert attempt.browser_url is None
+    assert attempt.poll_url is None
