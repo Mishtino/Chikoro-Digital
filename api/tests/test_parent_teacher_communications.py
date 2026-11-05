@@ -50,6 +50,16 @@ def _attach_verified_guardian_link(db_session, school, learner, profile_id):
     )
     db_session.add(contact)
     db_session.flush()
+    # The attached schema is a SQLite mirror, so keep its contact row in sync
+    # with the contact created above before exercising the production query.
+    db_session.execute(text("""
+        INSERT INTO public.contacts (id, school_id, student_id)
+        VALUES (:contact_id, :school_id, :student_id)
+    """), {
+        "contact_id": contact.id,
+        "school_id": school.id,
+        "student_id": learner.id,
+    })
     db_session.execute(text("""
         INSERT INTO public.guardian_links
             (profile_id, contact_id, school_id, is_active, verified_at)
