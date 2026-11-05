@@ -980,3 +980,26 @@ def test_only_vortex_platform_admin_can_run_cross_school_reconciliation(client):
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     response = client.post("/paynow/reconcile")
     assert response.status_code == 403
+
+def test_school_user_cannot_request_paynow_settings_for_another_school(client, db_session):
+    own = School(code="PN007", name="Own Paynow School")
+    other = School(code="PN008", name="Other Paynow School")
+    db_session.add_all([own, other])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7007, school_id=own.id,
+        role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    read_response = client.get(f"/paynow/settings?school_id={other.id}")
+    write_response = client.post("/paynow/settings", json={
+        "school_id": other.id,
+        "integration_id": "foreign",
+        "integration_key": "must-not-be-stored",
+        "test_mode": True,
+    })
+
+    assert read_response.status_code == 403
+    assert write_response.status_code == 403
+
