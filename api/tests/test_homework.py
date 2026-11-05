@@ -55,6 +55,7 @@ def test_homework_teacher_student_submission_and_marking(client, db_session, see
     app.dependency_overrides[get_supabase_principal] = lambda: _principal(learner_user, school)
     available = client.get("/homework/student/assignments")
     assert available.status_code == 200
+    assert available.json()["attachments_enabled"] is False
     assert available.json()["assignments"][0]["submission_status"] == "not_submitted"
 
     submitted = client.post(
