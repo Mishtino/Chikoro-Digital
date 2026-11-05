@@ -386,7 +386,7 @@ def test_initiation_rejects_untrusted_provider_checkout_url(
     monkeypatch.setattr(
         paynow, "initiate_transaction",
         lambda **_kwargs: {
-            "status": "Ok",
+            "Status": "Ok",
             "hash_verified": True,
             "BrowserUrl": "https://attacker.example/checkout",
             "PollUrl": "https://www.paynow.co.zw/interface/checkpayment/?guid=abc",
