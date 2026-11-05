@@ -63,6 +63,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 - Assessment entry, moderation/approval and report-card publishing. Teacher report-card access is restricted to currently assigned classes.
 - Assignment creation, resources and feedback.
 - Class performance analytics: a feature-branch endpoint and school leadership dashboard now aggregate published marks by class and subject, with learner counts, average percentage and a 50% pass-rate indicator. Teachers are restricted to currently assigned classes; draft/approved marks and inactive learners are excluded. Results are capped at 500 class/subject groups.
+- Term-to-term subject performance comparisons are implemented for student and verified-parent portals. The API compares the selected published-results term with the preceding term, uses subject database IDs to keep duplicate subject names distinct, and returns per-subject average changes. Parent requests are checked against the active verified guardian relationship.
 
 ### Bursar and finance workspace
 - Fee structures and student invoices.
