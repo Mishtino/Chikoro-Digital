@@ -71,6 +71,17 @@ def test_parent_teacher_messages_are_scoped_to_verified_child_and_assigned_teach
     })
     assert rejected.status_code == 404
 
+    # The parent inbox must re-check current verified guardian links rather
+    # than exposing conversations solely because a thread exists.
+    monkeypatch.setattr(parent_teacher, "_parent_student_ids", lambda _principal, _db: [learner.id])
+    parent_inbox = client.get("/communications/conversations")
+    assert parent_inbox.status_code == 200
+    assert [row["id"] for row in parent_inbox.json()["conversations"]] == [conversation_id]
+    monkeypatch.setattr(parent_teacher, "_parent_student_ids", lambda _principal, _db: [])
+    revoked_link_inbox = client.get("/communications/conversations")
+    assert revoked_link_inbox.status_code == 200
+    assert revoked_link_inbox.json()["conversations"] == []
+
     sent = client.post(
         f"/communications/conversations/{conversation_id}/messages",
         json={"body": "Could you please explain the homework task?"},
