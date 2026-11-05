@@ -218,44 +218,86 @@ def list_marks(
 @router.post("/marks/approve")
 def approve_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
-    if db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first() is None:
+    assessment = db.query(Assessment).filter(
+        Assessment.id == assessment_id, Assessment.school_id == sid
+    ).with_for_update().first()
+    if assessment is None:
         raise HTTPException(status_code=404, detail="Assessment not found in this school")
-    updated = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id, Mark.status == "draft").update({"status": "approved"})
-    db.commit()
+    updated = db.query(Mark).filter(
+        Mark.school_id == sid,
+        Mark.assessment_id == assessment_id,
+        Mark.status == "draft",
+    ).update({"status": "approved"}, synchronize_session=False)
+    # write_audit commits the state transition and audit record together.
     write_audit(db, principal, "marks.approve", "assessment", assessment_id, {"count": updated}, school_id=sid)
     return {"approved": updated}
+
+
 @router.post("/marks/publish")
 def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
     sid = _sid(principal, school_id)
-    assessment = db.query(Assessment).filter(Assessment.id == assessment_id, Assessment.school_id == sid).first()
+    assessment = db.query(Assessment).filter(
+        Assessment.id == assessment_id, Assessment.school_id == sid
+    ).with_for_update().first()
     if assessment is None:
         raise HTTPException(status_code=404, detail="Assessment not found in this school")
-    marks = db.query(Mark).filter(Mark.school_id == sid, Mark.assessment_id == assessment_id, Mark.status == "approved").all()
+
+    # Lock the assessment first so concurrent publish requests serialize.
+    marks = (
+        db.query(Mark)
+        .filter(
+            Mark.school_id == sid,
+            Mark.assessment_id == assessment_id,
+            Mark.status == "approved",
+        )
+        .order_by(Mark.id)
+        .with_for_update()
+        .all()
+    )
     if not marks:
         raise HTTPException(status_code=409, detail="No approved marks are available to publish")
+
     from datetime import datetime, timezone
-    for m in marks:
-        m.status = "published"
-        m.published_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.commit()
+    for mark in marks:
+        mark.status = "published"
+        mark.published_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
     from app.models.notification import Notification
     from app.models.student import Contact
-    students = {m.student_id for m in marks}
-    for st_id in students:
-        contacts = db.query(Contact).filter(Contact.student_id == st_id, Contact.school_id == sid, Contact.is_primary == True).all()
-        for c in contacts:
-            if c.email:
-                dedupe = f"results-published:{assessment_id}:{st_id}:email"
-                exists = db.query(Notification).filter(Notification.dedupe_key == dedupe).first()
-                if not exists:
-                    db.add(Notification(school_id=sid, dedupe_key=dedupe, channel="email", recipient=c.email, payload={"assessment_id": assessment_id, "student_id": st_id}, status="queued"))
-            if c.phone:
-                dedupe = f"results-published:{assessment_id}:{st_id}:sms"
-                exists = db.query(Notification).filter(Notification.dedupe_key == dedupe).first()
-                if not exists:
-                    db.add(Notification(school_id=sid, dedupe_key=dedupe, channel="sms", recipient=c.phone, payload={"assessment_id": assessment_id, "student_id": st_id}, status="queued"))
-    db.commit()
-    write_audit(db, principal, "marks.publish", "assessment", assessment_id, {"count": len(marks)}, school_id=sid)
+    student_ids = {mark.student_id for mark in marks}
+    contacts = (
+        db.query(Contact)
+        .filter(
+            Contact.student_id.in_(student_ids),
+            Contact.school_id == sid,
+            Contact.is_primary.is_(True),
+        )
+        .order_by(Contact.id)
+        .all()
+    )
+    for contact in contacts:
+        if contact.email:
+            dedupe = f"results-published:{assessment_id}:{contact.student_id}:email"
+            db.add(Notification(
+                school_id=sid, dedupe_key=dedupe, channel="email",
+                recipient=contact.email,
+                payload={"assessment_id": assessment_id, "student_id": contact.student_id},
+                status="queued",
+            ))
+        if contact.phone:
+            dedupe = f"results-published:{assessment_id}:{contact.student_id}:sms"
+            db.add(Notification(
+                school_id=sid, dedupe_key=dedupe, channel="sms",
+                recipient=contact.phone,
+                payload={"assessment_id": assessment_id, "student_id": contact.student_id},
+                status="queued",
+            ))
+
+    # A single commit persists publication, queued notifications and audit.
+    write_audit(
+        db, principal, "marks.publish", "assessment", assessment_id,
+        {"count": len(marks)}, school_id=sid,
+    )
     return {"published": len(marks)}
 
 
