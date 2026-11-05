@@ -44,7 +44,7 @@ async def security_response_headers(request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Cache-Control", "no-store")
     if settings.env.lower() == "production":
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
