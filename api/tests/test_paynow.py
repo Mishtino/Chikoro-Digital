@@ -969,3 +969,14 @@ def test_signed_paynow_cancellation_status_is_accepted_from_provider_poll(
     assert response.json()["status"] == "ok"
     db_session.refresh(attempt)
     assert attempt.status == "cancelled"
+
+
+
+def test_only_vortex_platform_admin_can_run_cross_school_reconciliation(client):
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=999, school_id=None,
+        role="vortex_support", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.post("/paynow/reconcile")
+    assert response.status_code == 403
