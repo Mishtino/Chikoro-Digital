@@ -302,6 +302,104 @@ def parent_child_attendance(
         "records_limited": total > len(records),
     }
 
+
+def _term_comparison_payload(student: Student, selected_term_id: Optional[int], db: Session):
+    """Compare a learner's selected published-results term with the preceding published term."""
+    from app.models.results import Mark, Assessment, Subject
+    from app.models.fee import Term
+
+    terms = db.query(Term).join(
+        Assessment, Assessment.term_id == Term.id
+    ).join(
+        Mark, Mark.assessment_id == Assessment.id
+    ).filter(
+        Term.school_id == student.school_id,
+        Assessment.school_id == student.school_id,
+        Mark.school_id == student.school_id,
+        Mark.student_id == student.id,
+        Mark.status == "published",
+    ).distinct().order_by(
+        Term.academic_year.desc(), Term.start_date.desc(), Term.id.desc()
+    ).all()
+    if not terms:
+        return {"current_term": None, "previous_term": None, "subjects": []}
+    selected_index = 0
+    if selected_term_id is not None:
+        selected_index = next((i for i, term in enumerate(terms) if term.id == selected_term_id), -1)
+        if selected_index < 0:
+            raise HTTPException(status_code=404, detail="Term not found in this learner's published results")
+    current = terms[selected_index]
+    previous = terms[selected_index + 1] if selected_index + 1 < len(terms) else None
+
+    def averages(term):
+        if term is None:
+            return {}
+        rows = db.query(
+            Subject.id, Subject.name,
+            func.sum((Mark.score / Assessment.max_score) * Assessment.weight).label("weighted_score"),
+            func.sum(Assessment.weight).label("total_weight"),
+        ).join(
+            Assessment, Assessment.subject_id == Subject.id
+        ).join(
+            Mark, Mark.assessment_id == Assessment.id
+        ).filter(
+            Subject.school_id == student.school_id,
+            Assessment.school_id == student.school_id,
+            Mark.school_id == student.school_id,
+            Mark.student_id == student.id,
+            Assessment.term_id == term.id,
+            Mark.status == "published",
+        ).group_by(Subject.id, Subject.name).all()
+        return {
+            row.id: {
+                "subject_id": row.id,
+                "subject": row.name,
+                "average": round(float(row.weighted_score or 0) / float(row.total_weight or 1) * 100, 2),
+            }
+            for row in rows
+        }
+
+    current_rows = averages(current)
+    previous_rows = averages(previous)
+    subjects = []
+    for subject_id in sorted(set(current_rows) | set(previous_rows)):
+        now = current_rows.get(subject_id)
+        before = previous_rows.get(subject_id)
+        subjects.append({
+            "subject_id": subject_id,
+            "subject": (now or before)["subject"],
+            "current_average": now["average"] if now else None,
+            "previous_average": before["average"] if before else None,
+            "change": round(now["average"] - before["average"], 2) if now and before else None,
+        })
+    return {
+        "current_term": {"id": current.id, "name": current.name, "academic_year": current.academic_year},
+        "previous_term": {"id": previous.id, "name": previous.name, "academic_year": previous.academic_year} if previous else None,
+        "subjects": subjects,
+    }
+
+
+@router.get("/results/comparison")
+def student_term_comparison(
+    term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    student = _student_portal_student(principal, db)
+    return _term_comparison_payload(student, term_id, db)
+
+
+@router.get("/parent/children/{student_id}/results/comparison")
+def parent_child_term_comparison(
+    student_id: int,
+    term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    student = _parent_student(principal, student_id, db)
+    return _term_comparison_payload(student, term_id, db)
+
+
 @router.post("/register", status_code=status.HTTP_410_GONE)
 def portal_register():
     """Legacy local-password registration is disabled during Supabase migration."""
