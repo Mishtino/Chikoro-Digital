@@ -26,7 +26,10 @@ class Invoice(Base):
     voided_at = Column(DateTime(timezone=True), nullable=True)
     void_reason = Column(String(255), nullable=True)
 
-    __table_args__ = (UniqueConstraint("school_id", "invoice_number", name="uq_invoice_number_per_school"),)
+    __table_args__ = (
+        UniqueConstraint("school_id", "invoice_number", name="uq_invoice_number_per_school"),
+        UniqueConstraint("school_id", "student_id", "term_id", name="uq_invoice_student_term_per_school"),
+    )
 
 
 class InvoiceLine(Base):
