@@ -34,10 +34,6 @@ def _install_profiles(db_session, monkeypatch):
             WHERE id=:auth_id AND local_user_id IS NULL AND role='pending' AND is_active=0
         """), {"auth_id": auth_id, "local_id": local_id, "role": role, "school_id": school_id})
     )
-    monkeypatch.setattr(router, "text", lambda query: sql_text(
-        query.replace("public.profiles", "profiles").replace("CAST(:auth_id AS uuid)", ":auth_id")
-        .replace("now()", "CURRENT_TIMESTAMP").replace("FOR UPDATE", "")
-    ))
 
 
 def _configure(monkeypatch):
