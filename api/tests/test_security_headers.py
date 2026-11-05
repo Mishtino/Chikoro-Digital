@@ -14,7 +14,8 @@ def test_api_sets_baseline_security_headers(client):
 def test_hsts_is_added_only_in_production(client, monkeypatch):
     monkeypatch.setattr(settings, "env", "production")
     response = client.get("/health")
-    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert response.headers["strict-transport-security"] == "max-age=31536000"
+    assert "includeSubDomains" not in response.headers["strict-transport-security"]
 
 
 def test_hsts_is_not_added_in_development(client, monkeypatch):
