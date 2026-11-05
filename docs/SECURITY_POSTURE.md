@@ -56,9 +56,9 @@ These are point-in-time findings, not a guarantee that the database remains unch
 
 ## Migration history quarantine — 5 November 2026
 
-The repository's three former migration drafts (`202611040001`–`003`) did not match the four migration versions recorded by the live Supabase project. They have been moved from `supabase/migrations/` to `supabase/proposed_migrations/` so the normal Supabase migration command cannot accidentally apply them. The standard migration directory now contains a README that explicitly blocks `supabase db push` until the original live migration SQL is recovered and a canonical history is reconstructed.
+The repository's three former migration drafts (`202611040001`–`003`) did not match the four migration versions recorded by the live Supabase project and remain quarantined under `supabase/proposed_migrations/`. The exact four applied SQL definitions were recovered from `supabase_migrations.schema_migrations.statements` and restored under their original version/name pairs in `supabase/migrations/`.
 
-A proposed forward-only `profiles_role_check` migration is also stored in `supabase/proposed_migrations/`. It preserves live foreign keys, RLS flags, grants, and the own-profile SELECT policy. It is for staging review only. No production migration or identity link was applied.
+The proposed forward-only `profiles_role_check` and financial uniqueness migrations remain under `supabase/proposed_migrations/`, outside the standard migration path. They are for staging review only. No production migration or identity link was applied.
 
 
 ## Financial uniqueness backstops prepared — 5 November 2026
