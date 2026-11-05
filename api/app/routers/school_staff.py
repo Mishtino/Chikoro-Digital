@@ -20,6 +20,7 @@ from app.services.school_staff_access import (
     authorize_school_staff_role_change,
     authorize_school_staff_write,
     ensure_not_self_deactivation,
+    ROLE_CHANGE_TARGETS,
 )
 from app.services.school_staff_onboarding import (
     link_pending_staff_profile,
@@ -51,6 +52,38 @@ class SchoolStaffInviteRequest(BaseModel):
         if not value:
             raise ValueError("Full name cannot be empty")
         return value
+
+
+
+@router.get("/staff-management/capabilities")
+def school_staff_management_capabilities(
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.is_admin or principal.role not in {"owner", "headmaster"} or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School administrator access required")
+    school = db.get(School, principal.school_id)
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    schema_ready = school_staff_role_schema_ready(db)
+    active_school = school.status == "live"
+    invitations_enabled = bool(
+        settings.school_staff_invitations_enabled
+        and schema_ready
+        and (settings.supabase_secret_key or "").strip()
+        and active_school
+    )
+    lifecycle_enabled = bool(
+        settings.school_staff_lifecycle_enabled
+        and schema_ready
+        and active_school
+    )
+    return {
+        "invitations_enabled": invitations_enabled,
+        "lifecycle_enabled": lifecycle_enabled,
+        "invitable_roles": sorted(ROLE_CHANGE_TARGETS.get(principal.role, ())),
+        "manageable_roles": sorted(ROLE_CHANGE_TARGETS.get(principal.role, ())),
+    }
 
 
 @router.post("/invitations", status_code=status.HTTP_201_CREATED)
