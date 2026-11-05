@@ -6,7 +6,7 @@
 
 ## Executive finding
 
-The live Supabase migration ledger and the repository migration directory are not aligned. Do not run `supabase db push`, manually insert migration-history rows, or apply the repository SQL until the original four live migration definitions have been recovered and compared.
+The live Supabase migration ledger initially differed from the repository migration directory. On 5 November 2026, the exact four applied SQL definitions were recovered from `supabase_migrations.schema_migrations.statements` and restored under their original version/name pairs. Do not manually insert migration-history rows or apply any proposed new migration before staging review.
 
 ### Former repository migration drafts (now quarantined)
 
@@ -14,7 +14,7 @@ The live Supabase migration ledger and the repository migration directory are no
 - `supabase/proposed_migrations/legacy_202611040002_vortex_platform_role.sql`
 - `supabase/proposed_migrations/legacy_202611040003_vortex_staff_roles.sql`
 
-These three drafts were removed from `supabase/migrations/` and preserved under `supabase/proposed_migrations/`. The standard migration directory contains a blocking README until the original live migration definitions are recovered. Do not run `supabase db push`.
+These three drafts were removed from `supabase/migrations/` and preserved under `supabase/proposed_migrations/` because they were not the SQL applied to the live project. The four canonical applied migrations have since been restored to `supabase/migrations/` from the live ledger. The original drafts remain quarantined and must not be applied.
 
 ### Live migration ledger
 
@@ -25,7 +25,7 @@ The connected project reports these applied versions:
 - `20261104082933` — `add_verified_guardian_link_foundation`
 - `20261104083032` — `add_guardian_activation_fields`
 
-These are not the same migration versions or names as the three repository files. The original SQL for the four live ledger entries is not present in the current repository migration directory.
+These are not the same migration versions or names as the three repository files. The exact SQL statements for all four live ledger entries were recovered from the `statements` array in the live migration ledger and restored to the repository with their original versions and names.
 
 ## Live schema observations
 
@@ -56,13 +56,13 @@ Do not infer that the unlinked profile belongs to the unscoped admin. The platfo
 
 ## Safe reconciliation sequence
 
-1. Obtain and preserve the exact SQL for all four applied live migrations from the original migration source or deployment history.
-2. Compare those SQL files with the live catalog: table definitions, constraints, indexes, RLS flags, policies, grants, triggers, and functions.
-3. Reconstruct a canonical local migration history that records the already-applied versions without re-running their DDL. Never fabricate ledger entries merely to silence a CLI mismatch.
-4. Decide deliberately whether authenticated users should retain own-profile SELECT. Check every frontend and mobile client call path before changing the grant or policy.
-5. Resolve the owner identity mapping through a verified, audited provisioning action. Do not auto-link based only on role, email resemblance, or an unscoped account.
-6. Prepare a new forward-only migration for the platform role allow-list, preserving the live foreign-key delete actions and approved profile-read behaviour. Test it on a staging clone first.
-7. Apply only after explicit production approval, then verify the migration ledger, role constraint, profile access policy, and owner permissions.
+1. **Completed:** recover and preserve the exact SQL for all four applied live migrations from `supabase_migrations.schema_migrations.statements`.
+2. **Completed:** restore those definitions under their exact version/name pairs in `supabase/migrations/`.
+3. **Completed:** quarantine the three former, unreconciled local drafts under `supabase/proposed_migrations/`; do not fabricate ledger entries.
+4. Preserve the live authenticated own-profile SELECT policy unless a separate reviewed client-access change is approved.
+5. Resolve the owner identity mapping only through the guarded, verified bootstrap endpoint and explicit approval; no identity was linked during this audit.
+6. Test the proposed role allow-list and financial uniqueness migrations on a staging clone.
+7. Apply new migrations only after explicit production approval, then verify the migration ledger, constraints, profile access policy, and owner permissions.
 
 ## Payment schema status
 
@@ -96,12 +96,12 @@ A proposed migration is now stored separately at:
 
 It adds and validates only the `profiles_role_check` constraint. It does not recreate the table, alter foreign keys, change RLS/FORCE RLS, change grants or policies, or promote/link any user. It explicitly aborts if a constraint with that name already exists or if an existing profile role is outside the approved list.
 
-**This is a staging proposal, not an applied migration and not yet in the standard `supabase/migrations` directory.** The four original live migration SQL definitions are still unavailable in the repository, so migration history reconciliation remains incomplete. Run this proposal only against a staging clone after comparing the original migration definitions and verifying the staging schema matches the audited live schema.
+**This is a staging proposal, not an applied migration and not yet in the standard `supabase/migrations` directory.** The four original live migration SQL definitions have now been restored. Migration-history file recovery is complete; staging validation and production release approval for the proposed new migrations remain outstanding. Run this proposal only against a staging clone after comparing the original migration definitions and verifying the staging schema matches the audited live schema.
 
 
 ## Migration quarantine safeguard — 5 November 2026
 
-The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. This prevents a routine Supabase CLI migration push from treating those unreconciled drafts as pending production migrations. `supabase/migrations/README.md` explicitly blocks pushes until the original four live SQL definitions are recovered. The proposed role allow-list SQL remains outside the standard migration path. This is a repository safety measure only; it does not alter the live Supabase migration ledger or database.
+The former repository migration drafts have been copied to `supabase/proposed_migrations/` and removed from `supabase/migrations/`. This prevents a routine Supabase CLI migration push from treating those unreconciled drafts as pending production migrations. `supabase/migrations/README.md` explicitly blocks pushes until the original four live SQL definitions are recovered. The proposed role allow-list SQL remains outside the standard migration path. This repository recovery does not alter the live Supabase migration ledger or database.
 
 
 ## Financial uniqueness proposal — 5 November 2026
