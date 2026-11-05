@@ -42,8 +42,21 @@ def validate_production_settings(config: Settings) -> None:
         errors.append("DATABASE_URL must point to PostgreSQL in production")
 
     supabase = urlsplit((config.supabase_url or "").strip())
-    if supabase.scheme != "https" or not supabase.hostname or supabase.username or supabase.password:
-        errors.append("SUPABASE_URL must be a valid HTTPS origin in production")
+    try:
+        supabase_port = supabase.port
+    except ValueError:
+        supabase_port = None
+        errors.append("SUPABASE_URL must contain a valid port in production")
+    if (
+        supabase.scheme != "https"
+        or not supabase.hostname
+        or supabase.username
+        or supabase.password
+        or supabase.path not in {"", "/"}
+        or supabase.query
+        or supabase.fragment
+    ):
+        errors.append("SUPABASE_URL must be a clean HTTPS origin in production")
 
     origins = [origin.strip() for origin in (config.cors_origins or "").split(",") if origin.strip()]
     if not origins or "*" in origins:
@@ -51,8 +64,21 @@ def validate_production_settings(config: Settings) -> None:
     else:
         for origin in origins:
             parsed = urlsplit(origin)
-            if parsed.scheme != "https" or not parsed.hostname or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-                errors.append("Every production CORS origin must be an HTTPS origin without a path")
+            try:
+                parsed.port
+                valid_origin = (
+                    parsed.scheme == "https"
+                    and bool(parsed.hostname)
+                    and not parsed.username
+                    and not parsed.password
+                    and parsed.path in {"", "/"}
+                    and not parsed.query
+                    and not parsed.fragment
+                )
+            except ValueError:
+                valid_origin = False
+            if not valid_origin:
+                errors.append("Every production CORS origin must be a clean HTTPS origin without a path")
                 break
 
     if config.homework_attachments_enabled and not (config.supabase_secret_key or "").strip():
