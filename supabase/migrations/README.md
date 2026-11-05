@@ -6,9 +6,10 @@ The connected production project has four applied migration versions whose origi
 
 The exact original SQL must be recovered and migration history reconciled before this directory is repopulated with the canonical migration chain.
 
-Current forward-only role-allow-list draft:
-`supabase/proposed_migrations/20261105_add_profiles_platform_role_allowlist.sql`
+Current staging-only proposals:
+- `supabase/proposed_migrations/20261105_add_profiles_platform_role_allowlist.sql`
+- `supabase/proposed_migrations/20261105_add_financial_uniqueness_backstops.sql`
 
-That file is staging-only and is not approved for production application. It preserves the live foreign keys, RLS settings, grants, and profile-read policy. See `docs/SUPABASE_MIGRATION_RECONCILIATION.md`.
+Neither file is approved for production application. The role proposal preserves live foreign keys, RLS settings, grants, and profile-read policy. The financial proposal adds uniqueness backstops only after duplicate checks and requires review of table-lock impact. See `docs/SUPABASE_MIGRATION_RECONCILIATION.md`.
 
 No migration has been applied by this repository change.
