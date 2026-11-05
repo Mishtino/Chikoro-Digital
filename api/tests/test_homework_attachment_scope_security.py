@@ -79,7 +79,7 @@ def test_assigned_teacher_cannot_read_another_teachers_submission_attachments(
     attachment = HomeworkAttachment(
         school_id=school.id,
         submission_id=submission.id,
-        uploaded_by_user_id=learner.id if False else creator.id,
+        uploaded_by_user_id=creator.id,
         object_path=f"schools/{school.id}/private-test.pdf",
         original_filename="private-test.pdf",
         content_type="application/pdf",
