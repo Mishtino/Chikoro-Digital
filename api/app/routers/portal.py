@@ -166,15 +166,17 @@ def parent_child_report_card(student_id: int, term_id: Optional[int] = None, pri
         q = q.filter(Assessment.term_id == term_id)
     subjects = {}
     for mark, assessment, subject in q.all():
-        subjects.setdefault(subject.name, []).append(
+        subjects.setdefault(subject.id, {"name": subject.name, "entries": []})["entries"].append(
             (assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight))
         )
     results = []
-    for name, entries in subjects.items():
+    for subject_id, group in subjects.items():
+        entries = group["entries"]
         total_weight = sum(weight for _, _, _, weight in entries)
         weighted = sum((score / maximum) * weight for _, score, maximum, weight in entries) if total_weight else 0
         results.append({
-            "subject": name,
+            "subject_id": subject_id,
+            "subject": group["name"],
             "average": round(weighted / total_weight * 100, 2) if total_weight else 0,
             "assessments": [
                 {"name": assessment_name, "score": score, "max": maximum}
@@ -387,15 +389,17 @@ def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal =
         q = q.filter(Assessment.term_id == term_id)
     subjects = {}
     for mark, assessment, subject in q.all():
-        subjects.setdefault(subject.name, []).append(
+        subjects.setdefault(subject.id, {"name": subject.name, "entries": []})["entries"].append(
             (assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight))
         )
     results = []
-    for name, entries in subjects.items():
+    for subject_id, group in subjects.items():
+        entries = group["entries"]
         total_weight = sum(weight for _, _, _, weight in entries)
         weighted = sum((score / maximum) * weight for _, score, maximum, weight in entries) if total_weight else 0
         results.append({
-            "subject": name,
+            "subject_id": subject_id,
+            "subject": group["name"],
             "average": round(weighted / total_weight * 100, 2) if total_weight else 0,
             "assessments": [
                 {"name": assessment_name, "score": score, "max": maximum}
