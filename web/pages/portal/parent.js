@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { api } from '../../lib/api';
+import { api, API_BASE } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
 import ParentHomeworkPanel from '../../components/ParentHomeworkPanel';
 
@@ -161,6 +161,31 @@ export default function ParentPortal() {
     loadMessages();
     return () => { active = false; };
   }, [selectedConversationId]);
+
+
+  async function downloadChildReportCard() {
+    if (!selectedId) return;
+    setError('');
+    try {
+      const { data, error: sessionError } = await getSupabaseBrowserClient().auth.getSession();
+      if (sessionError || !data.session?.access_token) throw new Error('Please sign in again to download this report.');
+      const query = selectedTermId ? '?term_id=' + encodeURIComponent(selectedTermId) : '';
+      const response = await fetch(API_BASE + '/portal/parent/children/' + selectedId + '/report-card.pdf' + query, {
+        headers: { Authorization: 'Bearer ' + data.session.access_token },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || 'The report card could not be downloaded.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'child-report-card.pdf';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) { setError(err.message || 'The report card could not be downloaded.'); }
+  }
 
   async function startConversation(event) {
     event.preventDefault();
@@ -328,7 +353,10 @@ export default function ParentPortal() {
       </section>}
 
       {results && <section className="card" style={{ marginTop: 18 }}>
-        <h2>Published results</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0 }}>Published results</h2>
+          <button type="button" onClick={downloadChildReportCard}>Download PDF</button>
+        </div>
         {!results.subjects.length && <p>No results have been published for this learner yet.</p>}
         {results.subjects.map(subject => <div key={subject.subject_id} style={{ borderTop: '1px solid #e5e7eb', padding: '12px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{subject.subject}</strong><strong>{Number(subject.average).toFixed(1)}%</strong></div>
