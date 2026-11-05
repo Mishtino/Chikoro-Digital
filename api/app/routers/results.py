@@ -335,6 +335,89 @@ def class_performance_analytics(
     return {"school_id": sid, "term_id": term_id, "results": results}
 
 
+@router.get("/analytics/subject-trends")
+def subject_performance_trends(
+    subject_id: Optional[int] = Query(None),
+    class_name: Optional[str] = Query(None),
+    school_id: Optional[int] = Query(None),
+    principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')),
+    db: Session = Depends(get_db),
+):
+    """Return term-by-term published performance for a subject, optionally limited to a class."""
+    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School academic access required")
+    if subject_id is not None and db.query(Subject).filter(
+        Subject.id == subject_id, Subject.school_id == sid
+    ).first() is None:
+        raise HTTPException(status_code=404, detail="Subject not found in this school")
+
+    query = db.query(
+        Term.id.label("term_id"),
+        Term.name.label("term_name"),
+        Term.academic_year.label("academic_year"),
+        Subject.id.label("subject_id"),
+        Subject.name.label("subject_name"),
+        Student.form.label("class_name"),
+        func.count(Mark.id).label("mark_count"),
+        func.count(func.distinct(Student.id)).label("learner_count"),
+        func.avg((Mark.score / Assessment.max_score) * 100).label("average_percent"),
+        func.sum(case((Mark.score >= Assessment.max_score * 0.5, 1), else_=0)).label("pass_count"),
+    ).join(
+        Assessment, (Assessment.term_id == Term.id) & (Assessment.school_id == Term.school_id)
+    ).join(
+        Mark, (Mark.assessment_id == Assessment.id) & (Mark.school_id == Assessment.school_id)
+    ).join(
+        Student, (Student.id == Mark.student_id) & (Student.school_id == Mark.school_id)
+    ).join(
+        Subject, (Subject.id == Assessment.subject_id) & (Subject.school_id == Assessment.school_id)
+    ).filter(
+        Term.school_id == sid,
+        Assessment.school_id == sid,
+        Mark.school_id == sid,
+        Student.school_id == sid,
+        Student.status == "active",
+        Subject.school_id == sid,
+        Mark.status == "published",
+    )
+    if subject_id is not None:
+        query = query.filter(Subject.id == subject_id)
+    if class_name is not None:
+        query = query.filter(Student.form == class_name)
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed = assigned_class_names(db, principal, sid)
+        if not allowed:
+            return {"school_id": sid, "trends": []}
+        if class_name is not None and class_name not in allowed:
+            raise HTTPException(status_code=403, detail="You are not assigned to this class")
+        query = query.filter(Student.form.in_(sorted(allowed)))
+
+    rows = query.group_by(
+        Term.id, Term.name, Term.academic_year,
+        Subject.id, Subject.name, Student.form,
+    ).order_by(
+        Term.academic_year, Term.id, Subject.name, Student.form,
+    ).limit(1000).all()
+    trends = []
+    for row in rows:
+        count = int(row.mark_count or 0)
+        passes = int(row.pass_count or 0)
+        trends.append({
+            "term_id": row.term_id,
+            "term_name": row.term_name,
+            "academic_year": row.academic_year,
+            "subject_id": row.subject_id,
+            "subject_name": row.subject_name,
+            "class_name": row.class_name,
+            "learner_count": int(row.learner_count or 0),
+            "mark_count": count,
+            "average_percent": round(float(row.average_percent or 0), 2),
+            "pass_rate_percent": round(passes / count * 100, 2) if count else None,
+        })
+    return {"school_id": sid, "trends": trends}
+
+
+
 @router.get("/report-card/{student_id}")
 def report_card(student_id: int, term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
     if principal.is_admin or principal.role not in {"owner", "headmaster", "teacher"} or principal.school_id is None:
