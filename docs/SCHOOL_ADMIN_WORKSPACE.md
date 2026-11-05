@@ -14,6 +14,10 @@ The overview returns:
 
 The finance summary excludes void invoices and allocations from voided payments. It is read-only and is not a substitute for invoice-level finance permissions.
 
+## Teacher workspace
+
+Teacher sign-ins route to `/school-admin/teacher`. The workspace lists school learners, terms, subjects and assessments; teachers can create subjects and assessments and submit bulk learner marks as drafts. Only owners and headmasters can approve and publish marks. Teachers can read their own school's terms but cannot request another school's terms.
+
 ## Finance workspace
 
 The `/school-admin/finance` page is available to school owners, headmasters and bursars. It reads only the authenticated school's learner, invoice and payment records. It shows open invoices, balances by currency, and recent payments; authorized staff can record a manual cash, bank or mobile-money payment. Allocation, overpayment prevention, duplicate-reference checks and receipt numbering are enforced by the API. The page does not directly initiate Paynow transactions.
