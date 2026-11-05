@@ -41,3 +41,19 @@ def test_process_does_not_mark_queued_notifications_as_sent_without_delivery_pro
     assert notification.status == "queued"
     assert notification.attempts == 0
     assert notification.sent_at is None
+
+def test_school_user_cannot_filter_notifications_by_another_school(client, db_session):
+    own = School(code="NT002", name="Own Notification School")
+    other = School(code="NT003", name="Other Notification School")
+    db_session.add_all([own, other])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=2, school_id=own.id,
+        role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    response = client.get(f"/notifications?school_id={other.id}")
+
+    assert response.status_code == 403
+
