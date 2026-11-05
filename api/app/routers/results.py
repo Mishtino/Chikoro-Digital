@@ -44,7 +44,7 @@ class BulkMarksRequest(BaseModel):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
@@ -67,7 +67,7 @@ def create_subject(payload: SubjectCreate, principal: SupabasePrincipal = Depend
 
 @router.get("/subjects")
 def list_subjects(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     return db.query(Subject).filter(Subject.school_id == sid).order_by(Subject.id).all()
@@ -92,7 +92,7 @@ def create_assessment(payload: AssessmentCreate, principal: SupabasePrincipal = 
 
 @router.get("/assessments")
 def list_assessments(subject_id: Optional[int] = Query(None), term_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'teacher')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Assessment).filter(Assessment.school_id == sid)
@@ -165,7 +165,7 @@ def list_marks(
 ):
     if principal.is_admin or principal.role not in {"owner", "headmaster", "teacher"}:
         raise HTTPException(status_code=403, detail="School academic access required")
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     if status_filter is not None and status_filter not in {"draft", "approved", "published"}:
@@ -268,7 +268,7 @@ def class_performance_analytics(
     db: Session = Depends(get_db),
 ):
     """Return aggregated published-mark performance, restricted to assigned teacher classes."""
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None or principal.is_admin:
         raise HTTPException(status_code=403, detail="School academic access required")
     if term_id is not None and db.query(Term).filter(
@@ -344,7 +344,7 @@ def subject_performance_trends(
     db: Session = Depends(get_db),
 ):
     """Return term-by-term published performance for a subject, optionally limited to a class."""
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None or principal.is_admin:
         raise HTTPException(status_code=403, detail="School academic access required")
     if subject_id is not None and db.query(Subject).filter(
