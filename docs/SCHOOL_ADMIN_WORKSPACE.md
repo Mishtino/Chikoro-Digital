@@ -18,6 +18,12 @@ The finance summary excludes void invoices and allocations from voided payments.
 
 Teacher sign-ins route to `/school-admin/teacher`. The workspace lists school learners, terms, subjects and assessments; teachers can create subjects and assessments and submit bulk learner marks as drafts. Only owners and headmasters can approve and publish marks. Teachers can read their own school's terms but cannot request another school's terms.
 
+## Attendance workspace
+
+Owners, headmasters and teachers can use `/school-admin/attendance` to create one daily register per class/form, mark active learners present, absent, late or excused, add optional notes, save a draft, and submit a complete register. Submission requires every active learner in the selected class to have a status; submitted registers are read-only. The API checks the school and class on every learner, rejects duplicate learners and duplicate class/date registers, and writes audit events. There is no teacher-to-class assignment model yet, so teacher access is currently limited to their own school rather than a particular assigned class.
+
+The attendance tables are defined in `supabase/proposed_migrations/20261105_add_attendance_registers.sql` only. They are not in the applied migration directory and have not been run against staging or production. The attendance API must not be released until the migration has been reviewed and applied in a disposable/staging environment, RLS and grants are verified, and end-to-end tests pass.
+
 ## Academic management workspace
 
 Owners and headmasters can use `/school-admin/academics` to create academic terms, review marks submitted by teachers, approve drafts, and publish approved marks. The API exposes a tenant-scoped mark review endpoint; teachers can see only marks they personally entered, while owners/headmasters can review all marks in their school. Teacher mark entry remains draft-only. Only owners/headmasters can approve and publish results.
