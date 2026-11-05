@@ -252,7 +252,7 @@ def test_reconcile_paid_attempt_creates_one_payment_and_receipt(
 
     principal = SupabasePrincipal(
         auth_user_id=uuid4(), user_id=1, school_id=None,
-        role="owner", is_admin=True,
+        role="vortex_admin", is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     monkeypatch.setattr(
@@ -323,7 +323,7 @@ def test_reconcile_retries_unverified_attempt_until_hash_is_verified(
 
     principal = SupabasePrincipal(
         auth_user_id=uuid4(), user_id=1, school_id=None,
-        role="owner", is_admin=True,
+        role="vortex_admin", is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     poll_results = iter([
@@ -912,7 +912,7 @@ def test_reconcile_does_not_accept_unsigned_failed_status(
 
     principal = SupabasePrincipal(
         auth_user_id=uuid4(), user_id=1, school_id=None,
-        role="owner", is_admin=True,
+        role="vortex_admin", is_admin=True,
     )
     app.dependency_overrides[get_supabase_principal] = lambda: principal
     monkeypatch.setattr(
