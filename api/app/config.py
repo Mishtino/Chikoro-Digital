@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_secret_key: str = ""
     school_staff_invitations_enabled: bool = False
+    school_staff_lifecycle_enabled: bool = False
     admin_bootstrap_token: str = ""
     platform_owner_email: str = ""
     access_token_expire_minutes: int = 60 * 8
