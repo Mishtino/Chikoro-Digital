@@ -1,11 +1,27 @@
 import hashlib
 import hmac
+from decimal import Decimal, InvalidOperation
 import urllib.parse
 from urllib.parse import urlsplit
 
 import httpx
 
 INIT_URL = "https://www.paynow.co.zw/interface/initiatetransaction"
+
+
+def _format_amount(amount) -> str:
+    """Format a positive cent-precision amount without a float conversion."""
+    try:
+        value = Decimal(str(amount))
+        if (
+            not value.is_finite()
+            or value <= 0
+            or value != value.quantize(Decimal("0.01"))
+        ):
+            raise ValueError("Paynow amount must be positive and have at most two decimal places")
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("Paynow amount must be a finite positive amount with cent precision") from exc
+    return format(value, ".2f")
 
 
 def generate_hash(values: dict, integration_key: str) -> str:
@@ -45,7 +61,7 @@ def initiate_transaction(
     values = {
         "id": integration_id,
         "reference": reference,
-        "amount": f"{float(amount):.2f}",
+        "amount": _format_amount(amount),
         "additionalinfo": additional_info or "",
         "returnurl": return_url,
         "resulturl": result_url,
