@@ -357,11 +357,14 @@ def _attachment_out(attachment):
     }
 
 
-def _submission_and_assignment(db, school_id, submission_id):
-    submission = db.query(HomeworkSubmission).filter(
+def _submission_and_assignment(db, school_id, submission_id, lock=False):
+    query = db.query(HomeworkSubmission).filter(
         HomeworkSubmission.id == submission_id,
         HomeworkSubmission.school_id == school_id,
-    ).first()
+    )
+    if lock:
+        query = query.with_for_update()
+    submission = query.first()
     if submission is None:
         raise HTTPException(status_code=404, detail="Submission not found")
     assignment = db.query(HomeworkAssignment).filter(
@@ -383,8 +386,8 @@ def create_homework_attachment_upload(
     if principal.role != "student":
         raise HTTPException(status_code=403, detail="Student access required")
     student = _student_portal_student(principal, db)
-    submission, assignment = _submission_and_assignment(db, student.school_id, submission_id)
-    if submission.student_id != student.id or assignment.status != "published":
+    submission, assignment = _submission_and_assignment(db, student.school_id, submission_id, lock=True)
+    if submission.student_id != student.id or assignment.status != "published" or submission.status != "submitted":
         raise HTTPException(status_code=404, detail="Submission not found")
     if assignment.due_at is not None:
         due = assignment.due_at.replace(tzinfo=None) if assignment.due_at.tzinfo is not None else assignment.due_at
