@@ -143,12 +143,12 @@ def assign_class_teacher(
         db.add(assignment)
     try:
         db.flush()
-        write_audit(db, principal, "class.teacher.assign", "class_teacher_assignment", assignment.id, {
-            "class_name": payload.class_name, "teacher_user_id": teacher.id,
-        }, school_id=sid)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="This teacher is already assigned to the class")
+    write_audit(db, principal, "class.teacher.assign", "class_teacher_assignment", assignment.id, {
+        "class_name": payload.class_name, "teacher_user_id": teacher.id,
+    }, school_id=sid)
     return {"id": assignment.id, "class_name": assignment.class_name, "teacher_user_id": teacher.id}
 
 
