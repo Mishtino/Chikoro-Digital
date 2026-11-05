@@ -29,7 +29,6 @@ class Invoice(Base):
     __table_args__ = (
         UniqueConstraint("school_id", "invoice_number", name="uq_invoice_number_per_school"),
         UniqueConstraint("school_id", "id", name="uq_invoice_school_id_id"),
-        UniqueConstraint("school_id", "id", name="uq_invoice_school_id_id"),
         UniqueConstraint("school_id", "student_id", "term_id", name="uq_invoice_student_term_per_school"),
     )
 
