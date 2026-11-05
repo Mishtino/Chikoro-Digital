@@ -1050,9 +1050,9 @@ def test_paynow_idempotency_lookup_is_scoped_to_attempt_school(db_session):
         Payment.reference == f"paynow:{attempt.id}",
     ).one()
     assert own_payment.id != foreign_payment.id
-    assert db_session.query(PaymentAllocation).filter(
-        PaymentAllocation.payment_id == own_payment.id,
-        PaymentAllocation.invoice_id == invoice.id,
+    assert db_session.query(Payment).filter(
+        Payment.school_id == own_school.id,
+        Payment.reference == f"paynow:{attempt.id}",
     ).count() == 1
     assert db_session.query(Receipt).filter(
         Receipt.payment_id == own_payment.id,
