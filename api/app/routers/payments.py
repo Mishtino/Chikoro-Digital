@@ -184,7 +184,7 @@ def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrinc
     payment.voided = True
     payment.voided_at = datetime.now(timezone.utc).replace(tzinfo=None)
     payment.void_reason = payload.reason
-    db.commit()
+    db.flush()
     write_audit(db, principal, "payment.void", "payment", payment.id, {"reason": payload.reason}, school_id=payment.school_id)
     return {"status": "voided"}
 
