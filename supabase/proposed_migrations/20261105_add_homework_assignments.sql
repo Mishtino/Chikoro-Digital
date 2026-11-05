@@ -9,7 +9,7 @@ BEGIN
     ALTER TABLE public.subjects
       ADD CONSTRAINT uq_subjects_school_id_id UNIQUE (school_id, id);
   END IF;
-END
+END;
 $homework$;
 
 CREATE TABLE public.homework_assignments (
@@ -99,7 +99,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'homework-private bucket must be private with a 10 MiB size limit';
   END IF;
-END
+END;
 $homework_storage$;
 
 ALTER TABLE public.homework_submissions
