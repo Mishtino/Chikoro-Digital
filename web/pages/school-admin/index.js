@@ -107,10 +107,11 @@ export default function SchoolAdminDashboard() {
             <Link href="/school-admin/students" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Manage learners →</Link>
             <Link href="/school-admin/finance" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Fees & payments →</Link>
             <Link href="/school-admin/academics" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Terms & results →</Link>
+            <Link href="/school-admin/analytics" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Class performance analytics →</Link>
             <Link href="/school-admin/attendance" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Attendance →</Link>
             <Link href="/school-admin/timetable" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Class timetable →</Link>
             <Link href="/school-admin/classes" style={{ display: 'block', color: '#2457c5', fontWeight: 600, marginBottom: 10 }}>Classes & teachers →</Link>
-            <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, margin: 0 }}>Manage school staff access from one place. Timetable, attendance and detailed finance screens are being developed as separate modules.</p>
+            <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, margin: 0 }}>Manage staff, learner records, academic results, class performance, attendance, timetables and finance from the school workspace.</p>
           </article>
         </section>
       </>}
