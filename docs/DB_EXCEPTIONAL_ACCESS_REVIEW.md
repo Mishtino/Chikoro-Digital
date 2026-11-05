@@ -75,18 +75,19 @@ Security boundary:
 
 Observed operations:
 - Requires owner/headmaster application role.
-- Selects queued notifications and marks them sent; current code contains a placeholder and does not deliver messages.
+- Reads queued notifications in the original placeholder implementation; the endpoint now returns HTTP 501 until a real delivery provider exists, and does not mark records sent or increment attempts.
 - For non-platform users it scopes the query to the principal's school; the platform-admin path can scan all schools.
 
 Security boundary and product correctness:
 - Preserve school scoping for ordinary school users.
 - Do not give the runtime cross-school notification access because of the platform-admin branch; if platform-wide processing is needed, move it to a dedicated worker.
-- Do not represent the current endpoint as actual email/SMS delivery. It currently changes status to `sent` without invoking a delivery provider. Before launch, either implement real provider delivery with retry/idempotency or rename the state transition to a clearly non-delivery status and test it.
+- The API now fails closed with HTTP 501 and leaves queued notifications untouched. Before launch, implement real provider delivery with retry/idempotency, or explicitly rename the action/state transition to a non-delivery status. Add provider integration tests before reporting a message as sent.
 
 ## Required release gates
 
 - [ ] Decide whether bootstrap is an operator tool or a separately privileged database action; remove it from generic runtime policy scope.
 - [ ] Replace direct `auth.users` reads with a verified Auth Admin API lookup, or approve a narrowly scoped alternative after inspecting exact required columns and grants.
+- [ ] Implement real notification delivery before enabling the process endpoint; current endpoint deliberately returns 501.
 - [ ] Define separate request kinds for activation, ordinary authenticated school traffic, platform staff, provider callback and reconciliation.
 - [ ] Ensure no request payload can select or elevate its request kind.
 - [ ] Verify context is re-established after each SQLAlchemy transaction restart and cleared on pool return.
