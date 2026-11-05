@@ -1,4 +1,5 @@
 from typing import List, Optional
+from xml.sax.saxutils import escape
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -477,12 +478,12 @@ def download_report_card_pdf(
         Paragraph("CHIKORO DIGITAL", styles["Title"]),
         Paragraph("STUDENT REPORT CARD", styles["Heading2"]),
         Spacer(1, 5 * mm),
-        Paragraph(f"<b>Learner:</b> {data['name']}", styles["BodyText"]),
-        Paragraph(f"<b>Student number:</b> {data['student_number']}", styles["BodyText"]),
+        Paragraph(f"<b>Learner:</b> {escape(str(data['name']))}", styles["BodyText"]),
+        Paragraph(f"<b>Student number:</b> {escape(str(data['student_number']))}", styles["BodyText"]),
     ]
     if term_id is not None:
         term = db.query(Term).filter(Term.id == term_id, Term.school_id == principal.school_id).first()
-        story.append(Paragraph(f"<b>Term:</b> {term.name}", styles["BodyText"]))
+        story.append(Paragraph(f"<b>Term:</b> {escape(str(term.name))}", styles["BodyText"]))
     story.append(Spacer(1, 7 * mm))
     table_data = [["Subject", "Average (%)", "Assessment", "Score"]]
     for subject in data["subjects"]:
