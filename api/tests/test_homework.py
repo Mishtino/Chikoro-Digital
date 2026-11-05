@@ -219,8 +219,11 @@ def test_homework_attachment_rejects_disallowed_type(client, db_session, seed_tw
     db_session.add_all([learner_user, student])
     db_session.flush()
     student.portal_user_id = learner_user.id
+    subject = Subject(school_id=school.id, name="Science", code="ATT-SCI")
+    db_session.add(subject)
+    db_session.flush()
     assignment = HomeworkAssignment(
-        school_id=school.id, class_name="Form 1", subject_id=seed_two_schools["subject"].id,
+        school_id=school.id, class_name="Form 1", subject_id=subject.id,
         title="Allowed upload", instructions="Upload a PDF.", status="published",
         created_by_user_id=seed_two_schools["u1"].id,
     )
