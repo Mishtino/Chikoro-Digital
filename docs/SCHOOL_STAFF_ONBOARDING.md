@@ -12,7 +12,7 @@ Design and release-gate document. The school staff directory is read-only today.
 - A school staff identity must have exactly one school association. Platform identities remain unscoped and use the Vortex platform role allowlist.
 - Email is normalized before lookup and uniqueness checks. Never trust a requested school ID or role without deriving the caller's authority server-side.
 
-## Invitation workflow (not enabled)
+## Invitation workflow (implemented behind a disabled feature gate)
 
 1. Authenticate the caller and resolve the current profile from the verified Supabase token.
 2. Permit only an active school `owner` or `headmaster`; bind the target school to the caller's profile. Do not accept a caller-supplied school override.
@@ -21,8 +21,8 @@ Design and release-gate document. The school staff directory is read-only today.
    - `headmaster` may invite `bursar` and `teacher`.
    - Neither role may create platform roles, parents, students, or another owner.
 4. Validate normalized email, role, school lifecycle state, and duplicate/in-flight invitations before calling Supabase Auth Admin.
-5. Use a server-side Supabase Auth Admin invitation operation. Never accept, store, email, or log a plaintext password or service credential.
-6. Create/link the local user and pending profile with the same school and approved role. Use a transaction and idempotency protection so retries cannot create duplicate local identities.
+5. Use a server-side Supabase Auth Admin invitation operation. The API validates the configured Auth origin, disables redirects, and never exposes upstream response bodies. Never accept, store, email, or log a plaintext password or service credential.
+6. Create an inactive local user and bind the Auth-trigger-created `pending` profile to the same school and approved role in one database transaction. The unique email and profile linkage constraints prevent duplicate local identities; a failed local transaction attempts to delete the newly invited Auth identity.
 7. Record an audit event with actor, school, target identity, role, outcome, and correlation ID. Do not put invitation tokens or secrets in audit details.
 8. Return a neutral success response. The invitee must complete Supabase's verified invitation flow before access is granted.
 
@@ -57,4 +57,4 @@ Do not enable the write endpoints until all of the following are verified in a n
 
 ## Current safe behavior
 
-Until these gates are complete, the school directory remains read-only, `POST /users` returns HTTP 410, and no invitation or account-lifecycle mutation is exposed in the school administrator UI.
+The school invitation endpoint exists but is disabled by default (`SCHOOL_STAFF_INVITATIONS_ENABLED=false`). It also fails closed unless the validated role constraint, server-side Supabase secret, and live-school status are present. If enabled in a reviewed staging environment, it creates an inactive local account and a linked but inactive profile; it does not grant access. The separate verified-email activation endpoint and staging end-to-end proof are still required before invitations can be enabled. The staff directory remains read-only in the UI, and `POST /users` continues to return HTTP 410.
