@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text, func
@@ -30,6 +30,39 @@ class StudentCreate(BaseModel):
     guardian_email: Optional[str] = None
     student_email: Optional[str] = None
     school_id: Optional[int] = None
+
+
+
+class StudentProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    form: Optional[str] = Field(default=None, max_length=40)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_required_names(cls, value):
+        if value is None:
+            raise ValueError("Student names cannot be cleared")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Student names cannot be blank")
+        return normalized
+
+    @field_validator("form")
+    @classmethod
+    def normalize_form(cls, value):
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def require_changes(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one student profile field must be supplied")
+        return self
 
 
 class StudentOut(BaseModel):
@@ -237,3 +270,53 @@ def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_
         "status": student.status,
         "activated": bool(student.activated_at),
     }
+
+
+@router.patch("/{student_id}", response_model=StudentOut)
+def update_student_profile(
+    student_id: int,
+    payload: StudentProfileUpdate,
+    principal: SupabasePrincipal = Depends(require_supabase_roles("owner", "headmaster")),
+    db: Session = Depends(get_db),
+):
+    sid = principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped administrator access required")
+
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.school_id == sid,
+    ).with_for_update().first()
+    if student is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    changes = {}
+    for field, new_value in payload.model_dump(exclude_unset=True).items():
+        old_value = getattr(student, field)
+        if old_value != new_value:
+            changes[field] = {"from": old_value, "to": new_value}
+            setattr(student, field, new_value)
+
+    if changes:
+        db.commit()
+        db.refresh(student)
+        write_audit(
+            db,
+            principal,
+            "student.profile_update",
+            "student",
+            student.id,
+            {"changes": changes},
+            school_id=sid,
+        )
+
+    return StudentOut(
+        id=student.id,
+        school_id=student.school_id,
+        student_number=student.student_number,
+        first_name=student.first_name,
+        last_name=student.last_name,
+        form=student.form,
+        status=student.status,
+        activated=bool(student.activated_at),
+    )
