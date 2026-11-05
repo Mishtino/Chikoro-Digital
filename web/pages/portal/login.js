@@ -37,7 +37,7 @@ export default function PortalLogin() {
   return (
     <main className="auth-shell">
       <section className="auth-visual">
-        <div className="brand-lockup"><span className="brand-mark">C</span><span>CHIKORO DIGITAL</span></div>
+        <div className="brand-lockup"><Brand inverse /></div>
         <div className="visual-copy"><span className="eyebrow">Your school, connected</span><h1>Learning starts with a connected community.</h1><p>One simple place for students and parents to stay informed, follow school fees and keep up with the school journey.</p></div>
         <div className="visual-foot">A smarter school experience · Chikoro Digital</div>
       </section>
