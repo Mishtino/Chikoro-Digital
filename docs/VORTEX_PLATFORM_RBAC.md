@@ -49,12 +49,7 @@ linking fails, it attempts to delete the Auth user so the invitation is
 invalidated. The endpoint fails closed until the trusted profile role
 constraint contains both supported staff roles.
 
-The invitation workflow is not production-ready until migrations
-`202611040002_vortex_platform_role.sql` and
-`202611040003_vortex_staff_roles.sql` are reviewed and applied, the Render
-secret is configured, and the Supabase Auth invite email/redirect configuration
-is verified. Until then, keep the existing Vortex owner as the only provisioned
-platform account. Do not manually promote a school account, set `is_admin`, or
+The invitation workflow is not production-ready until migration history is reconciled, the forward-only role allow-list is staged and approved, the Render secret is configured, and the Supabase Auth invite email/redirect configuration is verified. The invitation endpoint intentionally fails closed while the live role constraint is absent. Until then, keep the existing Vortex owner as the only provisioned platform account. Do not manually promote a school account, set `is_admin`, or
 create profile rows from a browser/client.
 
 
