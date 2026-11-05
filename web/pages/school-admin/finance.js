@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { api } from '../../lib/api';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import Brand from '../../components/Brand';
 
 export default function SchoolFinance() {
   const router = useRouter();
@@ -100,7 +101,7 @@ export default function SchoolFinance() {
   return <main style={{ minHeight: '100vh', background: '#f5f7fb', padding: '30px 18px', color: '#172033' }}>
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-        <div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>CHIKORO DIGITAL · SCHOOL FINANCE</p><h1 style={{ margin: '7px 0 4px' }}>Fees & payments</h1><p style={{ margin: 0, color: '#64748b' }}>Signed in as {role.replaceAll('_', ' ')}</p></div>
+        <div><div style={{ marginBottom: 10 }}><Brand compact /></div><p style={{ margin: 0, color: '#53627a', fontSize: 13, fontWeight: 700, letterSpacing: '.08em' }}>SCHOOL FINANCE</p><h1 style={{ margin: '7px 0 4px' }}>Fees & payments</h1><p style={{ margin: 0, color: '#64748b' }}>Signed in as {role.replaceAll('_', ' ')}</p></div>
         <div style={{ display: 'flex', gap: 9 }}>{['owner', 'headmaster'].includes(role) && <Link href="/school-admin" style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 12px', textDecoration: 'none', color: '#172033', background: '#fff' }}>Dashboard</Link>}<button onClick={signOut} style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: '10px 12px', background: '#fff', cursor: 'pointer' }}>Sign out</button></div>
       </header>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: '#fff1f0', color: '#b42318' }}>{error}</p>}
