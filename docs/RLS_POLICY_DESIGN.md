@@ -130,3 +130,9 @@ The custom context values are trusted only because the API sets them after crypt
 - Performance Advisor: 26 foreign keys without covering indexes and 18 indexes reported unused. Do not drop unused indexes based on a low-traffic/near-empty database; assess workload and query plans first. Index proposals should be a separate, reviewed performance migration.
 
 References: [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security), [Leaked password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+
+
+### Paynow callback policy implications
+
+The current webhook's callback form is not a trusted identity. It is only a signal to poll Paynow. The signed provider poll response, verified against the school's integration key and bound to the stored merchant reference, is authoritative. RLS design must not permit a callback-supplied reference/status to select a privileged tenant or write a payment directly. Reconciliation is a separate owner-authorized cross-school process and must receive only the minimum access needed to poll and settle pending attempts.
+
