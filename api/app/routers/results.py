@@ -275,8 +275,11 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
         .order_by(Contact.id)
         .all()
     )
+    queued_channels = set()
     for contact in contacts:
-        if contact.email:
+        # The dedupe key is per learner/channel; tolerate multiple primary
+        # contact rows without creating duplicate queue entries.
+        if contact.email and (contact.student_id, "email") not in queued_channels:
             dedupe = f"results-published:{assessment_id}:{contact.student_id}:email"
             db.add(Notification(
                 school_id=sid, dedupe_key=dedupe, channel="email",
@@ -284,7 +287,8 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
                 payload={"assessment_id": assessment_id, "student_id": contact.student_id},
                 status="queued",
             ))
-        if contact.phone:
+            queued_channels.add((contact.student_id, "email"))
+        if contact.phone and (contact.student_id, "sms") not in queued_channels:
             dedupe = f"results-published:{assessment_id}:{contact.student_id}:sms"
             db.add(Notification(
                 school_id=sid, dedupe_key=dedupe, channel="sms",
@@ -292,6 +296,7 @@ def publish_marks(assessment_id: int, school_id: Optional[int] = None, principal
                 payload={"assessment_id": assessment_id, "student_id": contact.student_id},
                 status="queued",
             ))
+            queued_channels.add((contact.student_id, "sms"))
 
     # A single commit persists publication, queued notifications and audit.
     write_audit(
