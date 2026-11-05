@@ -243,3 +243,29 @@ def test_student_term_comparison_compares_only_published_marks(client, db_sessio
         "current_average": 80.0, "previous_average": 65.0, "change": 15.0,
     }]
 
+def test_student_can_download_own_published_report_card_pdf(client, db_session):
+    school = School(code="PDFSTU1", name="Student PDF School")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(school_id=school.id, student_number="PDF-STU-1",
+                      first_name="Rudo", last_name="Moyo", status="active",
+                      portal_user_id=7500)
+    subject = Subject(school_id=school.id, name="Mathematics")
+    db_session.add_all([learner, subject])
+    db_session.flush()
+    assessment = Assessment(school_id=school.id, subject_id=subject.id,
+                            name="Final", weight=1, max_score=100)
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add(Mark(school_id=school.id, student_id=learner.id,
+                        assessment_id=assessment.id, score=88, status="published"))
+    db_session.commit()
+    principal = SupabasePrincipal(auth_user_id=uuid4(), user_id=7500,
+                                  school_id=school.id, role="student", is_admin=False)
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/portal/results/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].endswith('report-card-PDF-STU-1.pdf"')
+    assert response.content.startswith(b"%PDF")
+
