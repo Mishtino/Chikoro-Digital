@@ -69,7 +69,8 @@ export default function StudentHomeworkPortal() {
 
   async function uploadAttachment(event, item) {
     event.preventDefault();
-    const file = event.currentTarget.elements.namedItem('attachment')?.files?.[0];
+    const form = event.currentTarget;
+    const file = form.elements.namedItem('attachment')?.files?.[0];
     if (!file || !item.submission_id || uploadingId) return;
     setUploadingId(String(item.id)); setError(''); setNotice('');
     try {
@@ -86,7 +87,7 @@ export default function StudentHomeworkPortal() {
       await api('/homework/student/attachments/' + signed.attachment.id + '/complete', { method: 'POST' });
       await loadAssignments();
       setNotice('Your attachment was uploaded securely.');
-      event.currentTarget.reset();
+      form.reset();
     } catch (e) {
       setError(e.message || 'The attachment could not be uploaded.');
     } finally {
