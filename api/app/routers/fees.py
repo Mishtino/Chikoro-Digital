@@ -86,9 +86,8 @@ def create_term(payload: TermCreate, principal: SupabasePrincipal = Depends(requ
         db.query(Term).filter(Term.school_id == sid).update({"is_current": False})
     term = Term(school_id=sid, name=payload.name, academic_year=payload.academic_year, start_date=payload.start_date, end_date=payload.end_date, is_current=payload.is_current)
     db.add(term)
-    db.commit()
-    db.refresh(term)
-    write_audit(db, principal, "term.create", "term", term.id, {"name": term.name}, school_id=sid)
+    db.flush()
+    db.refresh(term)$3(db, principal, "term.create", "term", term.id, {"name": term.name}, school_id=sid)
     return term
 
 
@@ -164,9 +163,8 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
             currency=str(it.get("currency", "USD")).upper(),
         )
         db.add(line)
-    db.commit()
-    db.refresh(fs)
-    write_audit(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
+    db.flush()
+    db.refresh(fs)$3(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
     return {"id": fs.id}
 
 
@@ -211,7 +209,7 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
         for it in items:
             db.add(InvoiceLine(school_id=sid, invoice_id=inv.id, description=it.description or "Fee", amount=it.amount))
         created += 1
-    db.commit()
+    db.flush()
     write_audit(db, principal, "invoices.generate", "term", term.id, {"created": created, "form": payload.form}, school_id=sid)
     return {"created": created}
 
