@@ -55,6 +55,8 @@ class Payment(Base):
     voided_at = Column(DateTime(timezone=True), nullable=True)
     void_reason = Column(String(255), nullable=True)
 
+    __table_args__ = (UniqueConstraint("school_id", "reference", name="uq_payment_reference_per_school"),)
+
 
 class PaymentAllocation(Base):
     __tablename__ = "payment_allocations"
@@ -64,6 +66,8 @@ class PaymentAllocation(Base):
     payment_id = Column(Integer, ForeignKey("payments.id"), nullable=False, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, index=True)
     amount = Column(Numeric(12, 2), nullable=False)
+
+    __table_args__ = (UniqueConstraint("payment_id", "invoice_id", name="uq_payment_allocation_per_invoice"),)
 
 
 class Receipt(Base):
