@@ -33,11 +33,12 @@ A secure, multi-tenant school management and digital learning platform operated 
 - Attendance and absence alerts.
 - Results, report cards and teacher feedback.
 - Fee balances, itemised statements, receipts and secure payments.
-- School announcements, event calendar and teacher-school communication.
+- School announcements, event calendar and secure parent-teacher conversations. Parent messaging is implemented on the feature branch: parents can start threads only with teachers actively assigned to the verified learner's class; teachers can read/reply only to their own assigned-class threads. Messages are private in-app records; external email/SMS/push delivery is not configured.
 - Guardian relationships require verified email and school-issued, one-time activation credentials.
 
 ### Portal release gates
-- Parent attendance visibility is implemented on the feature branch and must pass API/UI CI plus staging tenant-isolation tests before release.
+- Parent attendance visibility and parent-teacher in-app messaging are implemented on the feature branch and must pass API/UI CI plus staging tenant-isolation tests before release.
+- Parent-teacher messaging requires the proposed messaging schema to be applied in staging first. Do not deploy the messaging API/UI until the migration is validated in the target environment.
 - Never expose another learner's data by changing a URL or request identifier.
 - Parent access is derived only from active, verified guardian links.
 - Student access is restricted to the authenticated student's own record.
