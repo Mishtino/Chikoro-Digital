@@ -258,8 +258,10 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
             raise HTTPException(status_code=404, detail="Invoice not found in this school")
         if selected_invoice.currency != "USD":
             raise HTTPException(status_code=422, detail="Paynow checkout currently supports USD invoices only")
+        # Student/parent checkout identity is fixed by the verified portal link.
+        # Never allow an invoice ID to replace that identity with another learner.
         if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
-            raise HTTPException(status_code=422, detail="Invoice does not belong to the selected student")
+            raise HTTPException(status_code=403 if principal.role in ("student", "parent") else 422, detail="Invoice does not belong to the selected student")
         payload.student_id = selected_invoice.student_id
 
     if payload.student_id is None:
