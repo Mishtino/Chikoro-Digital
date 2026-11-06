@@ -8,6 +8,8 @@ on:
       - "admin/**"
       - "supabase/**"
       - "docs/**"
+      - "scripts/**"
+      - "docker-compose.local.yml"
       - ".github/workflows/api-tests.yml"
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - "admin/**"
       - "supabase/**"
       - "docs/**"
+      - "scripts/**"
+      - "docker-compose.local.yml"
       - ".github/workflows/api-tests.yml"
 
 jobs:
