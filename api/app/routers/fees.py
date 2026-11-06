@@ -218,13 +218,25 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
         q = q.filter(Student.form == payload.form)
     students = q.all()
 
+    # Derive the next number from the highest issued sequence, not row
+    # count: deleted or imported invoice gaps must never cause number reuse.
+    existing_numbers = db.query(Invoice.invoice_number).filter(
+        Invoice.school_id == sid
+    ).all()
+    highest_number = 0
+    for (number,) in existing_numbers:
+        if isinstance(number, str) and number.startswith("INV-"):
+            suffix = number[4:]
+            if suffix.isdigit():
+                highest_number = max(highest_number, int(suffix))
+
     created = 0
     for st in students:
         exists = db.query(Invoice).filter(Invoice.school_id == sid, Invoice.student_id == st.id, Invoice.term_id == term.id).first()
         if exists:
             continue
-        count = db.query(Invoice).filter(Invoice.school_id == sid).count()
-        inv_number = f"INV-{count + 1:05d}"
+        highest_number += 1
+        inv_number = f"INV-{highest_number:05d}"
         inv = Invoice(school_id=sid, student_id=st.id, term_id=term.id, invoice_number=inv_number, currency=currency, total=total)
         db.add(inv)
         db.flush()
