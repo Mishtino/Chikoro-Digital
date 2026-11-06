@@ -1,6 +1,5 @@
 from datetime import date
 from decimal import Decimal
-import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -108,7 +107,7 @@ def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depen
     if amount > Decimal("9999999999.99") or amount.as_tuple().exponent < -2:
         raise HTTPException(status_code=422, detail="Fee amount must fit NUMERIC(12,2) without rounding")
     currency = payload.currency.upper()
-    if len(currency) != 3 or not currency.isalpha():
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
     item = FeeItem(school_id=sid, name=payload.name, amount=amount, currency=currency, applies_to_form=payload.applies_to_form)
     db.add(item)
@@ -137,7 +136,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
     structure_total = Decimal("0")
     for item in payload.items:
         item_currency = str(item.get("currency", "USD")).upper()
-        if len(item_currency) != 3 or not item_currency.isalpha():
+        if len(item_currency) != 3 or not item_currency.isascii() or not item_currency.isalpha():
             raise HTTPException(status_code=422, detail="Fee currency must be a three-letter code")
         currencies.add(item_currency)
         try:
@@ -217,7 +216,7 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     currencies = {str(item.currency).upper() for item in items}
     if len(currencies) != 1:
         raise HTTPException(status_code=422, detail="Fee structure contains mixed currencies")
-    if any(len(code) != 3 or not code.isalpha() for code in currencies):
+    if any(len(code) != 3 or not code.isascii() or not code.isalpha() for code in currencies):
         raise HTTPException(status_code=422, detail="Fee structure contains invalid currencies")
     amounts = [Decimal(str(item.amount)) for item in items]
     if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
