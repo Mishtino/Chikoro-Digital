@@ -723,3 +723,19 @@ def test_fee_structure_rejects_total_exceeding_invoice_capacity(client, db_sessi
     assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
     assert db_session.query(FeeStructure).count() == 0
     assert db_session.query(FeeStructureItem).count() == 0
+
+
+def test_fee_item_rejects_non_ascii_currency_code(client, db_session):
+    from app.models.fee import FeeItem
+
+    school = School(code="FEECUR23", name="Fee Currency Validation")
+    db_session.add(school)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-items", json={
+        "name": "Tuition", "amount": "10.00", "currency": "ÜSD",
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeItem).count() == 0
