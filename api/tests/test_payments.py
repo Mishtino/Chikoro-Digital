@@ -657,3 +657,25 @@ def test_invoice_generation_rejects_ambiguous_fee_structures(client, db_session)
     assert response.status_code == 409
     assert response.json()["detail"] == "Multiple fee structures match term/form"
     assert db_session.query(Invoice).count() == 0
+
+
+def test_fee_structure_rejects_fractional_cents_before_persisting(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEECENTS20", name="Fee Precision Protection")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-structures", json={
+        "term_id": term.id,
+        "name": "Invalid fractional cents",
+        "items": [{"description": "Tuition", "amount": 12.345, "currency": "USD"}],
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeStructure).count() == 0
+    assert db_session.query(FeeStructureItem).count() == 0
