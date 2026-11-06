@@ -41,7 +41,8 @@ def test_student_lookup_cannot_cross_school_boundary(client, seed_two_schools):
     _set_principal(data["u2"], data["s2"].id)
     response = client.get(f"/students/{other_school_student_id}")
 
-    assert response.status_code == 403
+    # Return 404 for an out-of-school record to avoid disclosing its existence.
+    assert response.status_code == 404
 
 
 def test_school_admin_can_update_student_profile_and_audit_changes(client, seed_two_schools, db_session):
