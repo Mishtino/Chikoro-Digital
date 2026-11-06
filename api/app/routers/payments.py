@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -29,7 +29,15 @@ class PaymentCreate(BaseModel):
 
 
 class VoidRequest(BaseModel):
-    reason: str
+    reason: str = Field(min_length=1, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("A non-empty void reason is required")
+        return value
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
