@@ -679,3 +679,21 @@ def test_fee_structure_rejects_fractional_cents_before_persisting(client, db_ses
     assert response.status_code == 422
     assert db_session.query(FeeStructure).count() == 0
     assert db_session.query(FeeStructureItem).count() == 0
+
+
+def test_fee_item_rejects_fractional_cents_before_persisting(client, db_session):
+    from app.models.fee import FeeItem
+
+    school = School(code="FEEITEM21", name="Fee Item Precision Protection")
+    db_session.add(school)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-items", json={
+        "name": "Invalid fractional cents",
+        "amount": 12.345,
+        "currency": "USD",
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeItem).count() == 0
