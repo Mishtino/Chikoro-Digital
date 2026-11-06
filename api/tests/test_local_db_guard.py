@@ -1,4 +1,7 @@
 import unittest
+from unittest.mock import patch, Mock
+
+from scripts import local_db_guard
 
 from scripts.local_db_guard import validate_database_url
 
@@ -47,6 +50,35 @@ class LocalDatabaseGuardTests(unittest.TestCase):
             "postgresql://user:pass@127.0.0.1:55432/chikoro_local#remote"
         )
         self.assertFalse(ok)
+
+
+    def test_rejects_other_loopback_host_and_invalid_port(self):
+        for url in (
+            "postgresql://user:pass@127.0.0.2:55432/chikoro_local",
+            "postgresql://user:pass@127.0.0.1:not-a-port/chikoro_local",
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local?hostaddr=10.0.0.2",
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local?service=prod",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(validate_database_url(url)[0])
+
+    def test_does_not_launch_command_for_unsafe_database(self):
+        with patch.dict("os.environ", {"DATABASE_URL": "postgresql://user:pass@prod.example.com:5432/prod"}):
+            with patch.object(local_db_guard.subprocess, "run") as run:
+                self.assertEqual(local_db_guard.main(["--", "alembic", "upgrade", "head"]), 2)
+                run.assert_not_called()
+
+    def test_runs_local_command_and_propagates_exit_code(self):
+        local_url = "postgresql://user:pass@127.0.0.1:55432/chikoro_local"
+        with patch.dict("os.environ", {"DATABASE_URL": local_url}):
+            with patch.object(local_db_guard.subprocess, "run", return_value=Mock(returncode=7)) as run:
+                self.assertEqual(local_db_guard.main(["--", "alembic", "upgrade", "head"]), 7)
+                run.assert_called_once_with(["alembic", "upgrade", "head"], check=False)
+
+    def test_does_not_launch_without_command(self):
+        with patch.object(local_db_guard.subprocess, "run") as run:
+            self.assertEqual(local_db_guard.main(["--"]), 2)
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
