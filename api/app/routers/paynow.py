@@ -441,9 +441,7 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/attempts")
 def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    sid = _sid(principal, school_id)
     attempts = db.query(PaynowAttempt).filter(PaynowAttempt.school_id == sid).order_by(PaynowAttempt.id.desc()).all()
     return [
         {
