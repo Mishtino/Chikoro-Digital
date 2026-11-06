@@ -202,8 +202,10 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     # Never calculate billed totals with binary floating point. Validate
     # persisted lines again in case they predate current input validation.
     currencies = {str(item.currency).upper() for item in items}
-    if len(currencies) != 1 or any(len(code) != 3 or not code.isalpha() for code in currencies):
-        raise HTTPException(status_code=422, detail="Fee structure contains mixed or invalid currencies")
+    if len(currencies) != 1:
+        raise HTTPException(status_code=422, detail="Fee structure contains mixed currencies")
+    if any(len(code) != 3 or not code.isalpha() for code in currencies):
+        raise HTTPException(status_code=422, detail="Fee structure contains invalid currencies")
     amounts = [Decimal(str(item.amount)) for item in items]
     if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
         raise HTTPException(status_code=422, detail="Fee structure contains invalid monetary amounts")
