@@ -591,3 +591,36 @@ def test_invoice_generation_does_not_reuse_gap_in_invoice_sequence(client, db_se
     assert response.json()["created"] == 1
     invoice = db_session.query(Invoice).filter(Invoice.term_id == term.id).one()
     assert invoice.invoice_number == "INV-00004"
+
+
+def test_invoice_generation_without_form_does_not_bill_form_specific_fees(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEFORM18", name="Form Fee Isolation")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="FORM-ONE-1",
+        first_name="Form", last_name="Learner", status="active",
+        form="Form 1",
+    )
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add_all([student, term])
+    db_session.flush()
+    structure = FeeStructure(
+        school_id=school.id, term_id=term.id,
+        form="Form 1", name="Form One Fees",
+    )
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add(FeeStructureItem(
+        school_id=school.id, fee_structure_id=structure.id,
+        description="Tuition", amount=20, currency="USD",
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 404
+    assert db_session.query(Invoice).count() == 0
