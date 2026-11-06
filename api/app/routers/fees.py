@@ -189,6 +189,9 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     fs_query = db.query(FeeStructure).filter(FeeStructure.school_id == sid, FeeStructure.term_id == payload.term_id)
     if payload.form:
         fs_query = fs_query.filter(FeeStructure.form == payload.form)
+    else:
+        # Never apply a form-specific fee structure to every learner.
+        fs_query = fs_query.filter(FeeStructure.form.is_(None))
     fee_structure = fs_query.first()
     if fee_structure is None:
         raise HTTPException(status_code=404, detail="Fee structure not found for term/form")
