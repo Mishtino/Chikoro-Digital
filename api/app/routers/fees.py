@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 import math
 from typing import List, Optional
 
@@ -198,8 +199,16 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     ).all()
     if not items:
         raise HTTPException(status_code=422, detail="Fee structure has no items to invoice")
-    total = sum(float(i.amount) for i in items)
-    currency = items[0].currency if items else "USD"
+    # Never calculate billed totals with binary floating point. Validate
+    # persisted lines again in case they predate current input validation.
+    currencies = {item.currency for item in items}
+    if len(currencies) != 1:
+        raise HTTPException(status_code=422, detail="Fee structure contains mixed currencies")
+    amounts = [Decimal(str(item.amount)) for item in items]
+    if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
+        raise HTTPException(status_code=422, detail="Fee structure contains invalid monetary amounts")
+    total = sum(amounts, Decimal("0"))
+    currency = items[0].currency
 
     q = db.query(Student).filter(Student.school_id == sid, Student.status == "active")
     if payload.form:
