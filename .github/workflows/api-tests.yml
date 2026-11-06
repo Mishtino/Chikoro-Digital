@@ -25,6 +25,20 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: chikoro_local
+          POSTGRES_USER: chikoro_local
+          POSTGRES_PASSWORD: local_only_change_me
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U chikoro_local -d chikoro_local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,6 +55,11 @@ jobs:
           ENV: test
           DEBUG: "false"
         run: python -m pytest -q api/tests
+      - name: Rehearse financial migration against isolated PostgreSQL 17
+        env:
+          DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
+          CHIKORO_REHEARSAL_EMPTY_DATABASE: "yes"
+        run: python scripts/rehearse_financial_migration.py
 
   web-build:
     runs-on: ubuntu-latest
