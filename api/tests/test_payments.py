@@ -523,3 +523,31 @@ def test_invoice_generation_rejects_mixed_currency_fee_lines(client, db_session)
     assert response.json()["detail"] == "Fee structure contains mixed currencies"
     assert db_session.query(Invoice).count() == 0
     assert db_session.query(InvoiceLine).count() == 0
+
+
+def test_invoice_generation_rejects_total_exceeding_numeric_column(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEELIMIT16", name="Invoice Total Limit")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 2", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Oversized Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add_all([
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="First", amount=6000000000, currency="USD"),
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Second", amount=6000000000, currency="USD"),
+    ])
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
+    assert db_session.query(Invoice).count() == 0
