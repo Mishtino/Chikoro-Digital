@@ -36,7 +36,7 @@ class PortalFeeItem(BaseModel):
 
 
 def _parent_student_ids(principal: SupabasePrincipal, db: Session) -> list[int]:
-    if principal.role != "parent":
+    if principal.role != "parent" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Parent portal only")
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -61,7 +61,7 @@ def _parent_student_ids(principal: SupabasePrincipal, db: Session) -> list[int]:
 
 def _student_portal_student(principal: SupabasePrincipal, db: Session) -> Student:
     """Resolve exactly one learner record, including inactive historical mappings."""
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Student portal only")
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -490,7 +490,7 @@ def portal_register():
 
 @router.get("/fee-status")
 def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Portal users only")
     student = _student_portal_student(principal, db)
     invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id, Invoice.status != "void").order_by(Invoice.id).all()
@@ -593,7 +593,7 @@ def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal =
 
 @router.get("/me")
 def portal_me(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Student portal only")
     from app.models.user import User
     user = db.get(User, principal.user_id)
