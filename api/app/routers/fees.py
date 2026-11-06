@@ -208,6 +208,9 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
         raise HTTPException(status_code=422, detail="Fee structure contains invalid monetary amounts")
     total = sum(amounts, Decimal("0"))
+    # The invoice total is stored in NUMERIC(12, 2).
+    if total > Decimal("9999999999.99"):
+        raise HTTPException(status_code=422, detail="Fee structure total exceeds invoice limit")
     currency = items[0].currency
 
     q = db.query(Student).filter(Student.school_id == sid, Student.status == "active")
