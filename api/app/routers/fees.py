@@ -39,7 +39,7 @@ class TermOut(BaseModel):
 
 class FeeItemCreate(BaseModel):
     name: str
-    amount: float
+    amount: Decimal
     currency: str = "USD"
     applies_to_form: Optional[str] = None
     school_id: Optional[int] = None
@@ -102,12 +102,15 @@ def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrinci
 @router.post("/fee-items", response_model=FeeItemOut, status_code=status.HTTP_201_CREATED)
 def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    if not math.isfinite(payload.amount) or payload.amount <= 0:
+    amount = Decimal(str(payload.amount))
+    if not amount.is_finite() or amount <= 0:
         raise HTTPException(status_code=422, detail="Fee amount must be a finite positive value")
+    if amount > Decimal("9999999999.99") or amount.as_tuple().exponent < -2:
+        raise HTTPException(status_code=422, detail="Fee amount must fit NUMERIC(12,2) without rounding")
     currency = payload.currency.upper()
     if len(currency) != 3 or not currency.isalpha():
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
-    item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=currency, applies_to_form=payload.applies_to_form)
+    item = FeeItem(school_id=sid, name=payload.name, amount=amount, currency=currency, applies_to_form=payload.applies_to_form)
     db.add(item)
     db.flush()
     db.refresh(item)
