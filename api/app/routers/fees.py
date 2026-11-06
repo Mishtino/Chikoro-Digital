@@ -137,11 +137,13 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
             raise HTTPException(status_code=422, detail="Fee currency must be a three-letter code")
         currencies.add(item_currency)
         try:
-            item_amount = float(item.get("amount", 0))
-        except (TypeError, ValueError):
+            item_amount = Decimal(str(item.get("amount", 0)))
+        except (ValueError, ArithmeticError):
             raise HTTPException(status_code=422, detail="Fee amounts must be valid numbers")
-        if not math.isfinite(item_amount) or item_amount <= 0:
+        if not item_amount.is_finite() or item_amount <= 0:
             raise HTTPException(status_code=422, detail="Fee amounts must be finite positive values")
+        if item_amount > Decimal("9999999999.99") or item_amount.as_tuple().exponent < -2:
+            raise HTTPException(status_code=422, detail="Fee amounts must fit NUMERIC(12,2) without rounding")
         fee_item_id = item.get("fee_item_id")
         if fee_item_id is not None:
             fee_item = db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first()
