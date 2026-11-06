@@ -624,3 +624,36 @@ def test_invoice_generation_without_form_does_not_bill_form_specific_fees(client
 
     assert response.status_code == 404
     assert db_session.query(Invoice).count() == 0
+
+
+def test_invoice_generation_rejects_ambiguous_fee_structures(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEAMB19", name="Ambiguous Fee Protection")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="AMBIGUOUS-1",
+        first_name="Ambiguous", last_name="Fee", status="active",
+    )
+    term = Term(school_id=school.id, name="Term 2", academic_year="2026")
+    db_session.add_all([student, term])
+    db_session.flush()
+    for name in ("Standard Fees", "Alternative Fees"):
+        structure = FeeStructure(
+            school_id=school.id, term_id=term.id, name=name,
+        )
+        db_session.add(structure)
+        db_session.flush()
+        db_session.add(FeeStructureItem(
+            school_id=school.id, fee_structure_id=structure.id,
+            description="Tuition", amount=20, currency="USD",
+        ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Multiple fee structures match term/form"
+    assert db_session.query(Invoice).count() == 0
