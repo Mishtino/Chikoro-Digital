@@ -239,9 +239,10 @@ def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: S
 
 @router.get("", response_model=List[StudentOut])
 def list_students(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    sid = _school_id(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    # School roster endpoints never accept a platform-wide identity.
+    if principal.is_admin or principal.is_platform_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    sid = _school_id(principal, school_id)
     student_query = db.query(Student).filter(Student.school_id == sid)
     if principal.role == "teacher" and not principal.is_admin:
         allowed_classes = assigned_class_names(db, principal, sid) or set()
@@ -267,11 +268,14 @@ def list_students(school_id: Optional[int] = Query(None), principal: SupabasePri
 
 @router.get("/{student_id}")
 def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    student = db.get(Student, student_id)
+    if principal.is_admin or principal.is_platform_admin or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.school_id == principal.school_id,
+    ).first()
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
-    if not principal.is_admin and principal.school_id != student.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     if principal.role == "teacher" and not principal.is_admin:
         allowed_classes = assigned_class_names(db, principal, student.school_id) or set()
         if student.form not in allowed_classes:
