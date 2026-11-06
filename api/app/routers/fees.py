@@ -134,6 +134,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one fee item is required")
     currencies = set()
+    structure_total = Decimal("0")
     for item in payload.items:
         item_currency = str(item.get("currency", "USD")).upper()
         if len(item_currency) != 3 or not item_currency.isalpha():
@@ -147,6 +148,9 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
             raise HTTPException(status_code=422, detail="Fee amounts must be finite positive values")
         if item_amount > Decimal("9999999999.99") or item_amount.as_tuple().exponent < -2:
             raise HTTPException(status_code=422, detail="Fee amounts must fit NUMERIC(12,2) without rounding")
+        structure_total += item_amount
+        if structure_total > Decimal("9999999999.99"):
+            raise HTTPException(status_code=422, detail="Fee structure total exceeds invoice limit")
         fee_item_id = item.get("fee_item_id")
         if fee_item_id is not None:
             fee_item = db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first()
