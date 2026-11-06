@@ -192,7 +192,12 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     if fee_structure is None:
         raise HTTPException(status_code=404, detail="Fee structure not found for term/form")
 
-    items = db.query(FeeStructureItem).filter(FeeStructureItem.fee_structure_id == fee_structure.id).all()
+    items = db.query(FeeStructureItem).filter(
+        FeeStructureItem.fee_structure_id == fee_structure.id,
+        FeeStructureItem.school_id == sid,
+    ).all()
+    if not items:
+        raise HTTPException(status_code=422, detail="Fee structure has no items to invoice")
     total = sum(float(i.amount) for i in items)
     currency = items[0].currency if items else "USD"
 
