@@ -551,3 +551,43 @@ def test_invoice_generation_rejects_total_exceeding_numeric_column(client, db_se
     assert response.status_code == 422
     assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
     assert db_session.query(Invoice).count() == 0
+
+
+def test_invoice_generation_does_not_reuse_gap_in_invoice_sequence(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEGAP17", name="Invoice Sequence Gap")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="FEE-GAP-STUDENT",
+        first_name="Invoice", last_name="Sequence", status="active",
+    )
+    db_session.add(student)
+    term = Term(school_id=school.id, name="Term 3", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    db_session.add_all([
+        Invoice(school_id=school.id, student_id=student.id,
+                invoice_number="INV-00001", currency="USD", total=10,
+                status="void"),
+        Invoice(school_id=school.id, student_id=student.id,
+                invoice_number="INV-00003", currency="USD", total=10,
+                status="void"),
+    ])
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Current Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add(FeeStructureItem(
+        school_id=school.id, fee_structure_id=structure.id,
+        description="Tuition", amount=10, currency="USD",
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 200
+    assert response.json()["created"] == 1
+    invoice = db_session.query(Invoice).filter(Invoice.term_id == term.id).one()
+    assert invoice.invoice_number == "INV-00004"
