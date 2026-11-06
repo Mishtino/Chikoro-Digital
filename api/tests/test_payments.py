@@ -697,3 +697,29 @@ def test_fee_item_rejects_fractional_cents_before_persisting(client, db_session)
 
     assert response.status_code == 422
     assert db_session.query(FeeItem).count() == 0
+
+
+def test_fee_structure_rejects_total_exceeding_invoice_capacity(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEETOTAL22", name="Fee Total Limit")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-structures", json={
+        "term_id": term.id,
+        "name": "Too expensive",
+        "items": [
+            {"description": "Tuition", "amount": 6000000000, "currency": "USD"},
+            {"description": "Boarding", "amount": 6000000000, "currency": "USD"},
+        ],
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
+    assert db_session.query(FeeStructure).count() == 0
+    assert db_session.query(FeeStructureItem).count() == 0
