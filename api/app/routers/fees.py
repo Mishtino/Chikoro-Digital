@@ -201,9 +201,9 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
         raise HTTPException(status_code=422, detail="Fee structure has no items to invoice")
     # Never calculate billed totals with binary floating point. Validate
     # persisted lines again in case they predate current input validation.
-    currencies = {item.currency for item in items}
-    if len(currencies) != 1:
-        raise HTTPException(status_code=422, detail="Fee structure contains mixed currencies")
+    currencies = {str(item.currency).upper() for item in items}
+    if len(currencies) != 1 or any(len(code) != 3 or not code.isalpha() for code in currencies):
+        raise HTTPException(status_code=422, detail="Fee structure contains mixed or invalid currencies")
     amounts = [Decimal(str(item.amount)) for item in items]
     if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
         raise HTTPException(status_code=422, detail="Fee structure contains invalid monetary amounts")
@@ -211,7 +211,7 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     # The invoice total is stored in NUMERIC(12, 2).
     if total > Decimal("9999999999.99"):
         raise HTTPException(status_code=422, detail="Fee structure total exceeds invoice limit")
-    currency = items[0].currency
+    currency = next(iter(currencies))
 
     q = db.query(Student).filter(Student.school_id == sid, Student.status == "active")
     if payload.form:
