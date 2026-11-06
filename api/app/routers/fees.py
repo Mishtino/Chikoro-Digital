@@ -188,9 +188,14 @@ def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrinc
     else:
         # Never apply a form-specific fee structure to every learner.
         fs_query = fs_query.filter(FeeStructure.form.is_(None))
-    fee_structure = fs_query.first()
-    if fee_structure is None:
+    # Never silently choose an arbitrary structure when a term/form has
+    # multiple configurations. Billing must be explicit and reproducible.
+    fee_structures = fs_query.limit(2).all()
+    if not fee_structures:
         raise HTTPException(status_code=404, detail="Fee structure not found for term/form")
+    if len(fee_structures) > 1:
+        raise HTTPException(status_code=409, detail="Multiple fee structures match term/form")
+    fee_structure = fee_structures[0]
 
     items = db.query(FeeStructureItem).filter(
         FeeStructureItem.fee_structure_id == fee_structure.id,
