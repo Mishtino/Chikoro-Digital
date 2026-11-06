@@ -493,3 +493,33 @@ def test_void_payment_rejects_blank_reason_without_mutating_payment(client, db_s
     db_session.refresh(payment)
     assert payment.voided is False
     assert payment.void_reason is None
+
+
+def test_invoice_generation_rejects_mixed_currency_fee_lines(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+    from app.models.payment import InvoiceLine
+
+    school = School(code="FEEMIX15", name="Mixed Currency Guard")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Invalid Mixed Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add_all([
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Tuition", amount=10, currency="USD"),
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Other", amount=10, currency="ZWL"),
+    ])
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure contains mixed currencies"
+    assert db_session.query(Invoice).count() == 0
+    assert db_session.query(InvoiceLine).count() == 0
