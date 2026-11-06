@@ -8,12 +8,12 @@ from app.deps_supabase import SupabasePrincipal, get_supabase_principal
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.class_assignment import ClassTeacherAssignment
-from app.models.fee import Term
+from app.models.fee import FeeItem, Term
 from app.models.results import Subject
 from app.models.student import Student
 from app.models.timetable import TimetableEntry
 from app.models.user import User
-from app.routers import classes, timetable
+from app.routers import classes, fees, timetable
 from app.services.auth import hash_password
 
 
@@ -87,4 +87,23 @@ def test_timetable_entry_rolls_back_when_audit_insert_fails(
     assert db_session.query(TimetableEntry).filter(
         TimetableEntry.school_id == school.id,
         TimetableEntry.class_name == "Form 1",
+    ).count() == 0
+
+
+def test_fee_item_rolls_back_when_audit_insert_fails(
+    client, db_session, seed_two_schools, monkeypatch
+):
+    school = seed_two_schools["s1"]
+    owner = seed_two_schools["u1"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner_principal(owner, school)
+    monkeypatch.setattr(fees, "write_audit", _reject_audit_at_commit)
+
+    with pytest.raises(IntegrityError):
+        client.post("/fees/fee-items", json={
+            "name": "Audit Test Fee", "amount": 125.0, "currency": "USD",
+        })
+    db_session.rollback()
+    assert db_session.query(FeeItem).filter(
+        FeeItem.school_id == school.id,
+        FeeItem.name == "Audit Test Fee",
     ).count() == 0
