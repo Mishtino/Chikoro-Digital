@@ -194,7 +194,7 @@ invoices_router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 @invoices_router.get("")
 def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id)
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Invoice).filter(Invoice.school_id == sid)
