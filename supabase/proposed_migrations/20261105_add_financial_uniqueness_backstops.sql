@@ -108,8 +108,9 @@ BEGIN
         JOIN public.invoices i ON i.id = pa.invoice_id
         WHERE pa.school_id <> p.school_id
            OR pa.school_id <> i.school_id
+           OR p.student_id <> i.student_id
     ) THEN
-        RAISE EXCEPTION 'Cross-school payment allocations exist; resolve before adding tenant foreign keys';
+        RAISE EXCEPTION 'Cross-school or cross-student payment allocations exist; resolve before adding tenant foreign keys';
     END IF;
 END
 $$;
