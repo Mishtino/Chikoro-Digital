@@ -45,3 +45,15 @@ def test_staging_proposals_have_explicit_transaction_boundaries():
         ]
         assert statements[0] == "BEGIN;", name
         assert statements[-1] == "COMMIT;", name
+
+
+def test_financial_migration_rejects_cross_student_allocations():
+    sql = (PROPOSED / "20261105_add_financial_uniqueness_backstops.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "join public.payments p on p.id = pa.payment_id" in sql
+    assert "join public.invoices i on i.id = pa.invoice_id" in sql
+    assert "pa.school_id <> p.school_id" in sql
+    assert "pa.school_id <> i.school_id" in sql
+    assert "p.student_id <> i.student_id" in sql
+    assert "raise exception 'cross-school or cross-student payment allocations exist" in sql
