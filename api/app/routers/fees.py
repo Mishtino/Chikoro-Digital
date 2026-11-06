@@ -110,8 +110,11 @@ def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depen
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
     item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=currency, applies_to_form=payload.applies_to_form)
     db.add(item)
-    db.commit()
+    db.flush()
     db.refresh(item)
+    write_audit(db, principal, "fee_item.create", "fee_item", item.id, {
+        "name": item.name, "amount": item.amount, "currency": item.currency,
+    }, school_id=sid)
     return item
 
 
