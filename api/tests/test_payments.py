@@ -464,3 +464,32 @@ def test_database_rejects_cross_school_payment_allocation(db_session):
 
 
 
+
+
+def test_void_payment_rejects_blank_reason_without_mutating_payment(client, db_session):
+    school = School(code="PAYVOID14", name="Void Reason Guard")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="VOID-REASON-1",
+        first_name="Audit", last_name="Guard", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    payment = Payment(
+        school_id=school.id, student_id=student.id,
+        amount=10, currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+    response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "   "},
+    )
+
+    assert response.status_code == 422
+    db_session.refresh(payment)
+    assert payment.voided is False
+    assert payment.void_reason is None
