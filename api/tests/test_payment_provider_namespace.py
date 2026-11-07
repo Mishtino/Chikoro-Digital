@@ -4,7 +4,15 @@ from app.main import app
 from app.models.payment import Invoice, Payment, Receipt
 from app.models.school import School
 from app.models.student import Student
-from test_payments import _owner
+from uuid import uuid4
+from app.deps_supabase import SupabasePrincipal
+
+
+def _owner(school_id):
+    return SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7001, school_id=school_id,
+        role="owner", is_admin=False,
+    )
 
 
 @pytest.mark.parametrize("method,reference", [
