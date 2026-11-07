@@ -79,7 +79,10 @@ def run():
         )}
         assert names == set(expected), f"Missing constraints: {set(expected) - names}"
 
+        # Seed a valid allocation, then verify the uniqueness backstop rejects a repeat.
+        db.execute("INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (10, 1, 1, 1, 5)")
         rejected = (
+            ("duplicate payment allocation", "INSERT INTO payment_allocations (school_id, payment_id, invoice_id, amount) VALUES (1, 1, 1, 5)"),
             ("duplicate payment reference", "INSERT INTO payments (school_id, student_id, amount, reference) VALUES (1, 1, 5, 'PAY-1')"),
             ("duplicate learner term invoice", "INSERT INTO invoices (school_id, student_id, term_id, invoice_number) VALUES (1, 1, 1, 'INV-NEW')"),
             ("cross-school allocation", "INSERT INTO payment_allocations (school_id, payment_id, invoice_id, amount) VALUES (2, 1, 3, 5)"),
