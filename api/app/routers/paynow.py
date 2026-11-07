@@ -262,6 +262,12 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         # Never allow an invoice ID to replace that identity with another learner.
         if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
             raise HTTPException(status_code=403 if principal.role in ("student", "parent") else 422, detail="Invoice does not belong to the selected student")
+        if principal.role not in ("student", "parent") and not db.query(Student.id).filter(
+            Student.id == selected_invoice.student_id,
+            Student.school_id == sid,
+            Student.status == "active",
+        ).first():
+            raise HTTPException(status_code=404, detail="Active student not found")
         payload.student_id = selected_invoice.student_id
 
     if payload.student_id is None:
