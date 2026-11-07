@@ -250,7 +250,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         raise HTTPException(status_code=400, detail="Paynow not configured for school")
 
     # Until the attempt schema supports multiple allocations, accept one invoice per checkout.
-    if payload.invoice_ids and len(set(payload.invoice_ids)) != 1:
+    if payload.invoice_ids is not None and len(payload.invoice_ids) != 1:
         raise HTTPException(status_code=422, detail="Paynow checkout currently supports one invoice at a time")
     if payload.invoice_ids:
         selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid, Invoice.status != 'void').first()
