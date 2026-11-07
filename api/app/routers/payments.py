@@ -101,9 +101,12 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         )
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
+    method = payload.method.strip().lower()
+    if not method:
+        raise HTTPException(status_code=422, detail="Payment method is required")
     reference = payload.reference.strip() if payload.reference else None
     # Provider-confirmed payments are created only by the verified Paynow flow.
-    if payload.method.strip().lower() == "paynow" or (reference and reference.lower().startswith("paynow:")):
+    if method == "paynow" or (reference and reference.lower().startswith("paynow:")):
         raise HTTPException(status_code=422, detail="Paynow payments must be recorded through verified provider settlement")
     if reference and db.query(Payment.id).filter(
         Payment.school_id == sid, Payment.reference == reference
@@ -114,7 +117,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         student_id=payload.student_id,
         amount=amount,
         currency=payload.currency.upper(),
-        method=payload.method,
+        method=method,
         reference=reference,
         received_by_user_id=principal.user_id,
     )
@@ -143,7 +146,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         raise
     db.refresh(payment)
     db.refresh(receipt)
-    write_audit(db, principal, "payment.record", "payment", payment.id, {"amount": float(payload.amount), "method": payload.method}, school_id=sid)
+    write_audit(db, principal, "payment.record", "payment", payment.id, {"amount": float(payload.amount), "method": method}, school_id=sid)
     return {
         "payment_id": payment.id,
         "receipt_number": receipt.receipt_number,
