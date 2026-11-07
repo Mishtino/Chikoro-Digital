@@ -33,3 +33,30 @@ def test_paynow_rejects_empty_invoice_selection_before_provider_call(client, db_
     assert response.status_code == 422
     assert response.json()["detail"] == "Paynow checkout currently supports one invoice at a time"
     assert db_session.query(PaynowAttempt).count() == 0
+
+
+def test_paynow_rejects_duplicate_invoice_ids_before_provider_call(client, db_session, monkeypatch):
+    school = School(
+        code="PN-DUP-IDS", name="Duplicate Invoice Selection School",
+        paynow_integration_id="test-integration",
+        paynow_integration_key=encrypt("test-integration-key"),
+    )
+    db_session.add(school)
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=2, school_id=school.id,
+        role="owner", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+
+    def unexpected_provider_call(**kwargs):
+        raise AssertionError("Provider must not be called for duplicate invoice IDs")
+
+    monkeypatch.setattr(paynow, "initiate_transaction", unexpected_provider_call)
+    response = client.post(
+        "/paynow/initiate",
+        json={"school_id": school.id, "invoice_ids": [12, 12]},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Paynow checkout currently supports one invoice at a time"
+    assert db_session.query(PaynowAttempt).count() == 0
