@@ -102,6 +102,9 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
     reference = payload.reference.strip() if payload.reference else None
+    # Provider-confirmed payments are created only by the verified Paynow flow.
+    if payload.method.strip().lower() == "paynow" or (reference and reference.lower().startswith("paynow:")):
+        raise HTTPException(status_code=422, detail="Paynow payments must be recorded through verified provider settlement")
     if reference and db.query(Payment.id).filter(
         Payment.school_id == sid, Payment.reference == reference
     ).first():
