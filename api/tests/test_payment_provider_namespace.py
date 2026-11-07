@@ -48,3 +48,31 @@ def test_manual_endpoint_cannot_impersonate_verified_paynow(
     assert response.json()["detail"] == "Paynow payments must be recorded through verified provider settlement"
     assert db_session.query(Payment).count() == 0
     assert db_session.query(Receipt).count() == 0
+
+
+@pytest.mark.parametrize("method", ["", "   "])
+def test_manual_payment_requires_nonempty_method(client, db_session, method):
+    school = School(code="PAY-EMPTY-METHOD", name="Missing Method School")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-EMPTY-METHOD-STU",
+        first_name="Missing", last_name="Method", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    db_session.add(Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-EMPTY-METHOD-INV", currency="USD",
+        total=20, status="issued",
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+    response = client.post("/payments", json={
+        "student_id": student.id, "amount": 10,
+        "method": method, "currency": "USD",
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Payment method is required"
+    assert db_session.query(Payment).count() == 0
+    assert db_session.query(Receipt).count() == 0
