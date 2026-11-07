@@ -462,7 +462,7 @@ def test_parent_cannot_pay_another_learners_invoice_within_same_school(
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 403
     assert response.json()["detail"] == "Invoice does not belong to the selected student"
     assert db_session.query(PaynowAttempt).count() == 0
 
