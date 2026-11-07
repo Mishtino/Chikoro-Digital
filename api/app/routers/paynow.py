@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import get_db
-from app.deps_supabase import SupabasePrincipal, require_supabase_roles
+from app.deps_supabase import SupabasePrincipal, get_supabase_principal, require_supabase_roles
 from app.models.school import School
 from app.models.student import Student
 from app.models.payment import Invoice, Payment, PaymentAllocation, Receipt
@@ -39,13 +39,20 @@ class PaynowInitiateRequest(BaseModel):
 
 
 
-def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
-    """Bind a signed Paynow Paid response to the exact local checkout."""
+def _verified_poll_reference(polled: dict, attempt: PaynowAttempt) -> bool:
+    """Require a signed provider poll response bound to this checkout reference."""
     if not polled.get("hash_verified"):
         return False
     provider_reference = polled.get("reference") or polled.get("Reference")
+    return provider_reference == attempt.reference
+
+
+def _verified_paid_confirmation(polled: dict, attempt: PaynowAttempt) -> bool:
+    """Bind a signed Paynow Paid response and exact amount to the local checkout."""
+    if not _verified_poll_reference(polled, attempt):
+        return False
     provider_amount = polled.get("amount") or polled.get("Amount")
-    if provider_reference != attempt.reference or provider_amount is None:
+    if provider_amount is None:
         return False
     try:
         from decimal import Decimal, InvalidOperation
@@ -65,7 +72,10 @@ def _record_verified_payment(db: Session, attempt: PaynowAttempt) -> bool:
     receipt-number allocation across different checkouts in the same tenant.
     """
     ref_key = f"paynow:{attempt.id}"
-    existing = db.query(Payment).filter(Payment.reference == ref_key).first()
+    existing = db.query(Payment).filter(
+        Payment.school_id == attempt.school_id,
+        Payment.reference == ref_key,
+    ).first()
     if existing is not None:
         return True
 
@@ -156,19 +166,21 @@ def _student_usd_balance(db: Session, school_id: int, student_id: int):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
 @router.post("/settings")
 def update_settings(payload: PaynowSettingsUpdate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+    if not principal.is_platform_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
     school = db.get(School, sid)
     if school is None:
@@ -176,7 +188,7 @@ def update_settings(payload: PaynowSettingsUpdate, principal: SupabasePrincipal 
     school.paynow_integration_id = payload.integration_id
     school.paynow_integration_key = encrypt(payload.integration_key)
     school.paynow_test_mode = payload.test_mode
-    db.commit()
+    db.flush()
     write_audit(db, principal, "paynow.settings.update", "school", school.id, {}, school_id=sid)
     return {"status": "updated"}
 
@@ -222,7 +234,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         if student is None or student.status != "active":
             raise HTTPException(status_code=404, detail="Active student not found")
         sid = student.school_id
-        if not principal.is_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
+        if not principal.is_platform_admin and principal.school_id != sid and principal.role not in ("student", "parent"):
             raise HTTPException(status_code=403, detail="Access denied")
     elif principal.role in ("student", "parent"):
         student = db.query(Student).filter(Student.portal_user_id == principal.user_id).first()
@@ -238,7 +250,7 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         raise HTTPException(status_code=400, detail="Paynow not configured for school")
 
     # Until the attempt schema supports multiple allocations, accept one invoice per checkout.
-    if payload.invoice_ids and len(set(payload.invoice_ids)) != 1:
+    if payload.invoice_ids is not None and len(payload.invoice_ids) != 1:
         raise HTTPException(status_code=422, detail="Paynow checkout currently supports one invoice at a time")
     if payload.invoice_ids:
         selected_invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_ids[0], Invoice.school_id == sid, Invoice.status != 'void').first()
@@ -246,8 +258,16 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
             raise HTTPException(status_code=404, detail="Invoice not found in this school")
         if selected_invoice.currency != "USD":
             raise HTTPException(status_code=422, detail="Paynow checkout currently supports USD invoices only")
+        # Student/parent checkout identity is fixed by the verified portal link.
+        # Never allow an invoice ID to replace that identity with another learner.
         if payload.student_id is not None and payload.student_id != selected_invoice.student_id:
-            raise HTTPException(status_code=422, detail="Invoice does not belong to the selected student")
+            raise HTTPException(status_code=403 if principal.role in ("student", "parent") else 422, detail="Invoice does not belong to the selected student")
+        if principal.role not in ("student", "parent") and not db.query(Student.id).filter(
+            Student.id == selected_invoice.student_id,
+            Student.school_id == sid,
+            Student.status == "active",
+        ).first():
+            raise HTTPException(status_code=404, detail="Active student not found")
         payload.student_id = selected_invoice.student_id
 
     if payload.student_id is None:
@@ -311,10 +331,24 @@ def initiate_payment(payload: PaynowInitiateRequest, principal: SupabasePrincipa
         additional_info=f"School {school.code}",
     )
 
-    if resp.get("status", "").lower() != "ok":
+    response_status = resp.get("status") or resp.get("Status") or ""
+    if str(response_status).lower() != "ok":
         attempt.status = "failed"
         db.commit()
-        raise HTTPException(status_code=400, detail=resp.get("error") or "Paynow initiation failed")
+        raise HTTPException(
+            status_code=400,
+            detail=resp.get("error") or resp.get("Error") or "Paynow initiation failed",
+        )
+
+    # Paynow requires the initiation response hash to be verified before
+    # redirecting a customer to the provider-returned checkout URL.
+    if not resp.get("hash_verified"):
+        attempt.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail="Paynow returned an unverified checkout response. Please contact your school before retrying.",
+        )
 
     browser_url = resp.get("BrowserUrl") or resp.get("browserurl")
     poll_url = resp.get("PollUrl") or resp.get("pollurl")
@@ -373,7 +407,17 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
         polled = poll_transaction(attempt.poll_url, integration_key)
     attempt.hash_verified = bool(polled.get("hash_verified"))
 
-    status_val = (polled.get("Status") or polled.get("status") or data.get("status") or data.get("Status") or "").lower()
+    # Never use callback form fields as authoritative payment status. The
+    # callback only wakes this handler; the signed provider poll is the source
+    # of truth for every state transition, not only Paid.
+    status_val = (polled.get("Status") or polled.get("status") or "").lower()
+    if not _verified_poll_reference(polled, attempt):
+        attempt.status = "unverified"
+        attempt.hash_verified = False
+        db.commit()
+        if status_val == "paid":
+            return {"status": "payment confirmation hash could not be verified"}
+        return {"status": "provider status could not be verified"}
 
     if status_val == "paid" and not _verified_paid_confirmation(polled, attempt):
         attempt.status = "unverified"
@@ -388,18 +432,24 @@ async def paynow_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "verified payment could not be matched to its invoice"}
     elif status_val in ("cancelled", "failed", "disputed"):
         attempt.status = status_val
-    else:
+    elif status_val in ("sent", "pending", "awaiting delivery"):
         attempt.status = "sent"
+    else:
+        # Unknown signed statuses are non-authoritative for local state.
+        db.commit()
+        return {"status": "provider status not recognized"}
 
-    attempt.paynow_reference = data.get("paynowreference") or data.get("PaynowReference") or attempt.paynow_reference
+    attempt.paynow_reference = (
+        polled.get("paynowreference")
+        or polled.get("PaynowReference")
+        or attempt.paynow_reference
+    )
     db.commit()
     return {"status": "ok"}
 
 @router.get("/attempts")
 def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    sid = _sid(principal, school_id)
     attempts = db.query(PaynowAttempt).filter(PaynowAttempt.school_id == sid).order_by(PaynowAttempt.id.desc()).all()
     return [
         {
@@ -417,9 +467,9 @@ def list_attempts(school_id: Optional[int] = None, principal: SupabasePrincipal 
 
 
 @router.post("/reconcile")
-def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    if not principal.is_admin:
-        raise HTTPException(status_code=403, detail="Admin only")
+def reconcile(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    if not principal.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Vortex platform administrator access required")
     pending = db.query(PaynowAttempt).filter(PaynowAttempt.status.in_(("sent", "unverified"))).with_for_update(skip_locked=True).all()
     updated = 0
     for att in pending:
@@ -431,6 +481,13 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             continue
         from app.services.paynow import poll_transaction
         polled = poll_transaction(att.poll_url, key)
+        att.hash_verified = bool(polled.get("hash_verified"))
+        if not _verified_poll_reference(polled, att):
+            att.hash_verified = False
+            att.status = "unverified"
+            updated += 1
+            continue
+
         st = (polled.get("Status") or polled.get("status") or "").lower()
         if st == "paid" and not _verified_paid_confirmation(polled, att):
             att.status = "unverified"
@@ -442,9 +499,13 @@ def reconcile(principal: SupabasePrincipal = Depends(require_supabase_roles('own
             else:
                 att.status = "unverified"
             updated += 1
-        elif st in ("cancelled", "failed"):
+        elif st in ("cancelled", "failed", "disputed"):
             att.status = st
             updated += 1
+        elif st in ("sent", "pending", "awaiting delivery"):
+            if att.status != "sent":
+                att.status = "sent"
+                updated += 1
     db.commit()
     return {"updated": updated}
 

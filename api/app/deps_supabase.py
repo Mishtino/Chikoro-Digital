@@ -53,7 +53,10 @@ def require_supabase_roles(*roles: str):
     allowed = frozenset(roles)
 
     def dependency(principal: SupabasePrincipal = Depends(get_supabase_principal)):
-        if principal.role not in allowed and not principal.is_admin:
+        # School routes must never inherit cross-tenant access from the legacy
+        # is_admin flag. Platform owners use explicitly permissioned /platform
+        # routes; tenant workflows require a non-admin school-scoped identity.
+        if principal.is_admin or principal.role not in allowed:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return principal
 

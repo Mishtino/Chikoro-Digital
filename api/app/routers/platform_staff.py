@@ -86,6 +86,11 @@ def list_platform_staff(
         JOIN public.users AS u ON u.id = p.local_user_id
         WHERE p.school_id IS NULL
           AND p.role IN ('vortex_admin', 'vortex_support', 'vortex_auditor', 'vortex_billing')
+          AND u.school_id IS NULL
+          AND (
+              (p.role = 'vortex_admin' AND u.role = 'admin' AND u.is_admin = true)
+              OR (p.role <> 'vortex_admin' AND u.role = p.role AND u.is_admin = false)
+          )
         ORDER BY u.email
     """)).mappings().all()
     return [dict(row) for row in rows]

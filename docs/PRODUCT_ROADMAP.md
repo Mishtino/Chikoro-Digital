@@ -18,7 +18,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Student workspace
 - Personal dashboard: school, class, term, attendance, upcoming deadlines, announcements.
-- Academic record: subject marks, grades, teacher feedback, term comparisons, downloadable report cards.
+- Academic record: subject marks, grades, teacher feedback, term comparisons and downloadable report cards. Student self-service PDF downloads are implemented on the feature branch and return only the authenticated learner's published marks.
 - Timetable and school calendar.
 - Assignments: instructions, due dates, attachments, submissions and feedback.
 - Learning resources: subject folders, notes and revision material.
@@ -28,17 +28,21 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Parent workspace
 - One account can link to multiple verified learners.
+- Attendance history and summaries now have a backend endpoint and parent dashboard view. Only submitted registers for active, verified linked learners are returned; date filters are supported and the summary counts the full matching history while the visible register is capped at the latest 100 records.
 - Per-child overview with clear learner switching.
 - Attendance and absence alerts.
-- Results, report cards and teacher feedback.
+- Results, report cards and teacher feedback. Verified parents can download a PDF for the selected linked learner; the server re-checks the active guardian relationship before returning published marks.
 - Fee balances, itemised statements, receipts and secure payments.
-- School announcements, event calendar and teacher-school communication.
+- School announcements, event calendar and secure parent-teacher conversations. Parent messaging is implemented on the feature branch: parents can start threads only with teachers actively assigned to the verified learner's class; teachers can read/reply only to their own assigned-class threads. Messages are private in-app records; external email/SMS/push delivery is not configured.
 - Guardian relationships require verified email and school-issued, one-time activation credentials.
 
 ### Portal release gates
+- Parent attendance visibility and parent-teacher in-app messaging are implemented on the feature branch and must pass API/UI CI plus staging tenant-isolation tests before release.
+- Parent-teacher messaging requires the proposed messaging schema to be applied in staging first. Do not deploy the messaging API/UI until the migration is validated in the target environment.
 - Never expose another learner's data by changing a URL or request identifier.
 - Parent access is derived only from active, verified guardian links.
 - Student access is restricted to the authenticated student's own record.
+- Homework assignment and text-submission workflows are implemented on the feature branch, including teacher publishing/marking, student submission, and parent progress panels. A private attachment workflow is now implemented on the feature branch: students request object-specific signed upload URLs for PDF, DOCX, XLSX, PPTX, JPG, PNG and TXT files (10 MiB each, up to five per submission); the API verifies uploaded size and MIME type before marking a file ready; students, assigned teachers, school leadership and verified parents receive short-lived signed download URLs only after role, school and relationship checks. The proposed homework migration now includes a private `homework-private` bucket and tenant-scoped attachment metadata. Validate bucket configuration, signed upload/download behavior, CORS and tenant isolation in staging before enabling or deploying attachments.
 - Notifications must not disclose sensitive student details on lock screens by default.
 
 ## Experience B — School Administration Portal
@@ -54,10 +58,13 @@ A secure, multi-tenant school management and digital learning platform operated 
 
 ### Teaching workspace
 - Assigned classes and subjects only.
+- Downloadable report-card PDFs are implemented on the feature branch for authorised school leadership and currently assigned teachers. PDFs are generated server-side from published marks only; learner and school scope checks are shared with the JSON report-card endpoint. Student and verified-parent self-service PDF downloads are now implemented on the feature branch, with API regression tests for successful downloads and linked-child isolation.
 - Attendance capture and correction history.
-- Assessment entry, moderation/approval and report-card publishing.
+- Assessment entry, moderation/approval and report-card publishing. Teacher report-card access is restricted to currently assigned classes.
 - Assignment creation, resources and feedback.
-- Class performance analytics.
+- Class performance analytics: a feature-branch endpoint and school leadership dashboard now aggregate published marks by class and subject, with learner counts, average percentage and a 50% pass-rate indicator. Teachers are restricted to currently assigned classes; draft/approved marks and inactive learners are excluded. Results are capped at 500 class/subject groups.
+- Subject performance trends are implemented on the feature branch for school leadership and assigned teachers. The endpoint aggregates published marks by term, subject and class, with learner counts, averages and pass rates; teacher results remain limited to currently assigned classes. The leadership analytics page displays the term-by-term trend table.
+- Term-to-term subject performance comparisons are implemented for student and verified-parent portals. The API compares the selected published-results term with the preceding term, uses subject database IDs to keep duplicate subject names distinct, and returns per-subject average changes. Parent requests are checked against the active verified guardian relationship.
 
 ### Bursar and finance workspace
 - Fee structures and student invoices.
@@ -130,7 +137,7 @@ A secure, multi-tenant school management and digital learning platform operated 
 ### Core school operations
 6. Student records, classes, subjects, staff and attendance.
 7. Fees, invoices, payments, receipts and reconciliation.
-8. Examinations, grading, report cards and academic analytics.
+8. Examinations, grading, report cards and academic analytics (class performance dashboard is implemented on the feature branch; staging/CI validation remains required).
 9. Parent/student dashboards, timetables, assignments and learning materials.
 
 ### Platform operations and growth

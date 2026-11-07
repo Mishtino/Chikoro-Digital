@@ -111,12 +111,14 @@ def create_school(payload: SchoolCreate, admin: SupabasePrincipal = Depends(get_
     school = School(code=payload.code, name=payload.name, province=payload.province, plan=payload.plan)
     db.add(school)
     try:
-        db.commit()
+        # Flush assigns the school ID; write_audit commits both the school and
+        # its audit record in one transaction.
+        db.flush()
+        write_audit(db, admin, "school.create", "school", school.id, {"code": school.code}, school_id=None)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="School code already exists")
     db.refresh(school)
-    write_audit(db, admin, "school.create", "school", school.id, {"code": school.code}, school_id=None)
     return school
 
 
@@ -161,8 +163,7 @@ def update_school_profile(
     if not changes:
         return school
 
-    db.commit()
-    db.refresh(school)
+    # Keep the profile update and its audit record in the same transaction.
     write_audit(
         db,
         admin,
@@ -172,6 +173,7 @@ def update_school_profile(
         {"changes": changes},
         school_id=None,
     )
+    db.refresh(school)
     return school
 
 
@@ -191,8 +193,7 @@ def update_school_status(
     if previous_status == payload.status:
         return school
     school.status = payload.status
-    db.commit()
-    db.refresh(school)
+    # Keep lifecycle changes and their audit records atomic.
     write_audit(
         db,
         admin,
@@ -206,4 +207,5 @@ def update_school_status(
         },
         school_id=None,
     )
+    db.refresh(school)
     return school

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -27,3 +27,5 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
 
     school = relationship("School", back_populates="users", foreign_keys=[school_id])
+
+    __table_args__ = (UniqueConstraint("school_id", "id", name="uq_users_school_id_id"),)

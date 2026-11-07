@@ -1,13 +1,16 @@
 from typing import Optional
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from sqlalchemy import text
 
 from app.database import get_db
 from app.deps_supabase import get_supabase_principal, SupabasePrincipal
 from app.models.student import Student, Contact
+from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.payment import Invoice
 from app.services.money import invoice_balance
 
@@ -33,7 +36,7 @@ class PortalFeeItem(BaseModel):
 
 
 def _parent_student_ids(principal: SupabasePrincipal, db: Session) -> list[int]:
-    if principal.role != "parent":
+    if principal.role != "parent" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Parent portal only")
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -58,7 +61,7 @@ def _parent_student_ids(principal: SupabasePrincipal, db: Session) -> list[int]:
 
 def _student_portal_student(principal: SupabasePrincipal, db: Session) -> Student:
     """Resolve exactly one learner record, including inactive historical mappings."""
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Student portal only")
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
@@ -144,6 +147,8 @@ def parent_child_fee_status(student_id: int, principal: SupabasePrincipal = Depe
 @router.get("/parent/children/{student_id}/report-card")
 def parent_child_report_card(student_id: int, term_id: Optional[int] = None, principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
     student = _parent_student(principal, student_id, db)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Linked student not found")
     from app.models.results import Mark, Assessment, Subject
     q = db.query(Mark, Assessment, Subject).join(
         Assessment, Assessment.id == Mark.assessment_id
@@ -163,15 +168,17 @@ def parent_child_report_card(student_id: int, term_id: Optional[int] = None, pri
         q = q.filter(Assessment.term_id == term_id)
     subjects = {}
     for mark, assessment, subject in q.all():
-        subjects.setdefault(subject.name, []).append(
+        subjects.setdefault(subject.id, {"name": subject.name, "entries": []})["entries"].append(
             (assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight))
         )
     results = []
-    for name, entries in subjects.items():
+    for subject_id, group in subjects.items():
+        entries = group["entries"]
         total_weight = sum(weight for _, _, _, weight in entries)
         weighted = sum((score / maximum) * weight for _, score, maximum, weight in entries) if total_weight else 0
         results.append({
-            "subject": name,
+            "subject_id": subject_id,
+            "subject": group["name"],
             "average": round(weighted / total_weight * 100, 2) if total_weight else 0,
             "assessments": [
                 {"name": assessment_name, "score": score, "max": maximum}
@@ -214,6 +221,264 @@ def parent_child_terms(student_id: int, principal: SupabasePrincipal = Depends(g
     }
 
 
+
+
+@router.get("/parent/children/{student_id}/attendance")
+def parent_child_attendance(
+    student_id: int,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    """Return submitted attendance only for a verified, linked learner."""
+    student = _parent_student(principal, student_id, db)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be on or before to_date")
+
+    query = db.query(AttendanceRecord, AttendanceSession).join(
+        AttendanceSession,
+        (AttendanceSession.id == AttendanceRecord.session_id)
+        & (AttendanceSession.school_id == AttendanceRecord.school_id),
+    ).filter(
+        AttendanceRecord.school_id == student.school_id,
+        AttendanceRecord.student_id == student.id,
+        AttendanceSession.school_id == student.school_id,
+        AttendanceSession.status == "submitted",
+    )
+    if from_date:
+        query = query.filter(AttendanceSession.attendance_date >= from_date)
+    if to_date:
+        query = query.filter(AttendanceSession.attendance_date <= to_date)
+
+    grouped_counts = db.query(
+        AttendanceRecord.status, func.count(AttendanceRecord.id)
+    ).join(
+        AttendanceSession,
+        (AttendanceSession.id == AttendanceRecord.session_id)
+        & (AttendanceSession.school_id == AttendanceRecord.school_id),
+    ).filter(
+        AttendanceRecord.school_id == student.school_id,
+        AttendanceRecord.student_id == student.id,
+        AttendanceSession.school_id == student.school_id,
+        AttendanceSession.status == "submitted",
+    )
+    if from_date:
+        grouped_counts = grouped_counts.filter(AttendanceSession.attendance_date >= from_date)
+    if to_date:
+        grouped_counts = grouped_counts.filter(AttendanceSession.attendance_date <= to_date)
+    grouped_counts = grouped_counts.group_by(AttendanceRecord.status).all()
+    counts = {"present": 0, "absent": 0, "late": 0, "excused": 0}
+    for state, count in grouped_counts:
+        if state in counts:
+            counts[state] = count
+    total = sum(counts.values())
+
+    rows = query.order_by(
+        AttendanceSession.attendance_date.desc(),
+        AttendanceSession.id.desc(),
+    ).limit(100).all()
+    records = []
+    for record, session in rows:
+        records.append({
+            "date": session.attendance_date.isoformat(),
+            "class_name": session.class_name,
+            "status": record.status,
+            "note": record.note,
+        })
+    return {
+        "student_id": student.id,
+        "student_number": student.student_number,
+        "name": f"{student.first_name} {student.last_name}",
+        "summary": {
+            "total_recorded_days": total,
+            "present": counts["present"],
+            "absent": counts["absent"],
+            "late": counts["late"],
+            "excused": counts["excused"],
+            "attendance_rate": round(
+                (counts["present"] + counts["late"]) / total * 100, 1
+            ) if total else None,
+        },
+        "records": records,
+        "records_limited": total > len(records),
+    }
+
+
+def _term_comparison_payload(student: Student, selected_term_id: Optional[int], db: Session):
+    """Compare a learner's selected published-results term with the preceding published term."""
+    from app.models.results import Mark, Assessment, Subject
+    from app.models.fee import Term
+
+    terms = db.query(Term).join(
+        Assessment, Assessment.term_id == Term.id
+    ).join(
+        Mark, Mark.assessment_id == Assessment.id
+    ).filter(
+        Term.school_id == student.school_id,
+        Assessment.school_id == student.school_id,
+        Mark.school_id == student.school_id,
+        Mark.student_id == student.id,
+        Mark.status == "published",
+    ).distinct().order_by(
+        Term.academic_year.desc(), Term.start_date.desc(), Term.id.desc()
+    ).all()
+    if not terms:
+        return {"current_term": None, "previous_term": None, "subjects": []}
+    selected_index = 0
+    if selected_term_id is not None:
+        selected_index = next((i for i, term in enumerate(terms) if term.id == selected_term_id), -1)
+        if selected_index < 0:
+            raise HTTPException(status_code=404, detail="Term not found in this learner's published results")
+    current = terms[selected_index]
+    previous = terms[selected_index + 1] if selected_index + 1 < len(terms) else None
+
+    def averages(term):
+        if term is None:
+            return {}
+        rows = db.query(
+            Subject.id, Subject.name,
+            func.sum((Mark.score / Assessment.max_score) * Assessment.weight).label("weighted_score"),
+            func.sum(Assessment.weight).label("total_weight"),
+        ).join(
+            Assessment, Assessment.subject_id == Subject.id
+        ).join(
+            Mark, Mark.assessment_id == Assessment.id
+        ).filter(
+            Subject.school_id == student.school_id,
+            Assessment.school_id == student.school_id,
+            Mark.school_id == student.school_id,
+            Mark.student_id == student.id,
+            Assessment.term_id == term.id,
+            Mark.status == "published",
+        ).group_by(Subject.id, Subject.name).all()
+        return {
+            row.id: {
+                "subject_id": row.id,
+                "subject": row.name,
+                "average": round(float(row.weighted_score or 0) / float(row.total_weight or 1) * 100, 2),
+            }
+            for row in rows
+        }
+
+    current_rows = averages(current)
+    previous_rows = averages(previous)
+    subjects = []
+    for subject_id in sorted(set(current_rows) | set(previous_rows)):
+        now = current_rows.get(subject_id)
+        before = previous_rows.get(subject_id)
+        subjects.append({
+            "subject_id": subject_id,
+            "subject": (now or before)["subject"],
+            "current_average": now["average"] if now else None,
+            "previous_average": before["average"] if before else None,
+            "change": round(now["average"] - before["average"], 2) if now and before else None,
+        })
+    return {
+        "current_term": {"id": current.id, "name": current.name, "academic_year": current.academic_year},
+        "previous_term": {"id": previous.id, "name": previous.name, "academic_year": previous.academic_year} if previous else None,
+        "subjects": subjects,
+    }
+
+
+@router.get("/results/comparison")
+def student_term_comparison(
+    term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    student = _student_portal_student(principal, db)
+    return _term_comparison_payload(student, term_id, db)
+
+
+@router.get("/parent/children/{student_id}/results/comparison")
+def parent_child_term_comparison(
+    student_id: int,
+    term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal),
+    db: Session = Depends(get_db),
+):
+    student = _parent_student(principal, student_id, db)
+    return _term_comparison_payload(student, term_id, db)
+
+
+
+
+def _portal_report_card_pdf(data: dict, term_id: Optional[int] = None):
+    from html import escape
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    import re
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm,
+                            topMargin=16*mm, bottomMargin=16*mm,
+                            title=f"Report card - {data['student_number']}", author="Chikoro Digital")
+    styles = getSampleStyleSheet()
+    story = [Paragraph("CHIKORO DIGITAL", styles["Title"]),
+             Paragraph("STUDENT REPORT CARD", styles["Heading2"]), Spacer(1, 5*mm),
+             Paragraph(f"<b>Learner:</b> {escape(str(data['name']))}", styles["BodyText"]),
+             Paragraph(f"<b>Student number:</b> {escape(str(data['student_number']))}", styles["BodyText"])]
+    if term_id is not None:
+        story.append(Paragraph(f"<b>Term ID:</b> {term_id}", styles["BodyText"]))
+    story.append(Spacer(1, 7*mm))
+    rows = [["Subject", "Average (%)", "Assessment", "Score"]]
+    for subject in data["subjects"]:
+        entries = subject.get("assessments", [])
+        if not entries:
+            rows.append([escape(str(subject["subject"])), f"{float(subject['average']):.2f}", "—", "—"])
+        for i, entry in enumerate(entries):
+            rows.append([escape(str(subject["subject"])) if i == 0 else "",
+                         f"{float(subject['average']):.2f}" if i == 0 else "",
+                         escape(str(entry["name"])),
+                         f"{float(entry['score']):g} / {float(entry['max']):g}"])
+    if len(rows) == 1:
+        rows.append(["No published results", "", "", ""])
+    table = Table(rows, colWidths=[42*mm, 28*mm, 70*mm, 30*mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#17365D")),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("GRID",(0,0),(-1,-1),0.35,colors.HexColor("#B7C3D0")),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#F3F6FA")]),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story.extend([table, Spacer(1, 8*mm),
+                  Paragraph("This report contains published assessment results only.", styles["Italic"])])
+    doc.build(story)
+    buffer.seek(0)
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", str(data["student_number"]))[:64]
+    filename = f"report-card-{safe}" + (f"-term-{term_id}" if term_id else "") + ".pdf"
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        })
+
+
+@router.get("/results/pdf")
+def student_report_card_pdf(term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    student = _student_portal_student(principal, db)
+    data = portal_results(term_id, principal, db)
+    return _portal_report_card_pdf(data, term_id)
+
+
+@router.get("/parent/children/{student_id}/report-card.pdf")
+def parent_child_report_card_pdf(student_id: int, term_id: Optional[int] = None,
+    principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
+    _parent_student(principal, student_id, db)
+    data = parent_child_report_card(student_id, term_id, principal, db)
+    return _portal_report_card_pdf(data, term_id)
+
+
 @router.post("/register", status_code=status.HTTP_410_GONE)
 def portal_register():
     """Legacy local-password registration is disabled during Supabase migration."""
@@ -225,7 +490,7 @@ def portal_register():
 
 @router.get("/fee-status")
 def portal_fee_status(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Portal users only")
     student = _student_portal_student(principal, db)
     invoices = db.query(Invoice).filter(Invoice.school_id == student.school_id, Invoice.student_id == student.id, Invoice.status != "void").order_by(Invoice.id).all()
@@ -301,15 +566,17 @@ def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal =
         q = q.filter(Assessment.term_id == term_id)
     subjects = {}
     for mark, assessment, subject in q.all():
-        subjects.setdefault(subject.name, []).append(
+        subjects.setdefault(subject.id, {"name": subject.name, "entries": []})["entries"].append(
             (assessment.name, float(mark.score), float(assessment.max_score), float(assessment.weight))
         )
     results = []
-    for name, entries in subjects.items():
+    for subject_id, group in subjects.items():
+        entries = group["entries"]
         total_weight = sum(weight for _, _, _, weight in entries)
         weighted = sum((score / maximum) * weight for _, score, maximum, weight in entries) if total_weight else 0
         results.append({
-            "subject": name,
+            "subject_id": subject_id,
+            "subject": group["name"],
             "average": round(weighted / total_weight * 100, 2) if total_weight else 0,
             "assessments": [
                 {"name": assessment_name, "score": score, "max": maximum}
@@ -326,7 +593,7 @@ def portal_results(term_id: Optional[int] = None, principal: SupabasePrincipal =
 
 @router.get("/me")
 def portal_me(principal: SupabasePrincipal = Depends(get_supabase_principal), db: Session = Depends(get_db)):
-    if principal.role != "student":
+    if principal.role != "student" or principal.is_admin:
         raise HTTPException(status_code=403, detail="Student portal only")
     from app.models.user import User
     user = db.get(User, principal.user_id)
