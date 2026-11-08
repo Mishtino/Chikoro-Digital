@@ -117,7 +117,7 @@ def run():
                             resolve_tenant_identity(db,str(uid))
                             permitted = uid in (1,2,3,4)
                             expected = {'students':[3] if uid==2 else [1,2],
-                                'invoices':[3] if uid==2 else [1,2], 'payments':[2] if uid==2 else [1],
+                                'invoices':[3] if uid==2 else [1,2], 'payments':[2,20] if uid==2 else [1,21,22],
                                 'payment_allocations':[20] if uid==2 else [10],
                                 'invoice_lines':[2] if uid==2 else [1], 'receipts':[2] if uid==2 else [1]}
                             for table, ids in expected.items():
@@ -137,7 +137,7 @@ def run():
                             continue
                         assert payments.status_code==200, payments.text
                         assert invoices.status_code==200, invoices.text
-                        assert [p['id'] for p in payments.json()] == ([2] if uid==2 else [1])
+                        assert [p['id'] for p in payments.json()] == ([20,2] if uid==2 else [22,21,1])
                         wanted=[3] if uid==2 else [2,1]
                         assert [i['id'] for i in invoices.json()] == wanted
                         balances={i['id']:i['balance'] for i in invoices.json()}
