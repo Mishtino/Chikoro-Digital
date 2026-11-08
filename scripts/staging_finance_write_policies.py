@@ -50,6 +50,24 @@ def install_finance_write_policies(connection, role):
     connection.execute(text(f"""CREATE POLICY manual_payment_void ON public.payments FOR UPDATE TO {role}
         USING ({void_scope}) WITH CHECK ({void_scope} AND voided AND voided_at IS NOT NULL
             AND void_reason IS NOT NULL AND length(trim(void_reason))>0)"""))
+    # USING must still admit voided rows for the route's SELECT FOR UPDATE
+    # and explicit Already voided response. Compare OLD/NEW in an invoker
+    # trigger instead; RLS WITH CHECK alone cannot enforce this transition.
+    connection.execute(text("""CREATE FUNCTION public.rehearsal_payment_void_guard()
+        RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
+        SET search_path = pg_catalog AS $$
+        BEGIN
+            IF OLD.voided AND
+               ROW(NEW.voided,NEW.voided_at,NEW.void_reason) IS DISTINCT FROM
+               ROW(OLD.voided,OLD.voided_at,OLD.void_reason) THEN
+                RAISE EXCEPTION 'Voided payment evidence is immutable'
+                    USING ERRCODE='23514';
+            END IF;
+            RETURN NEW;
+        END $$"""))
+    connection.execute(text("""CREATE TRIGGER rehearsal_payment_void_guard
+        BEFORE UPDATE ON public.payments FOR EACH ROW
+        EXECUTE FUNCTION public.rehearsal_payment_void_guard()"""))
     connection.execute(text("ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY"))
     audit_scope=base + f" AND actor_user_id={actor}"
     connection.execute(text(f"GRANT SELECT (id), INSERT (school_id,actor_user_id,action,entity_type,entity_id,details,created_at) ON public.audit_logs TO {role}"))

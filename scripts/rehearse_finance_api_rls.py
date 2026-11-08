@@ -156,6 +156,7 @@ def run():
                 outer.rollback()
         with engine.connect() as connection:
             assert connection.scalar(text("SELECT to_regclass('public.profiles')")) is None
+            assert connection.scalar(text("SELECT to_regprocedure('public.rehearsal_payment_void_guard()')")) is None
             assert connection.scalar(text("SELECT count(*) FROM pg_roles WHERE rolname=:role"),{'role':role})==0
     finally:
         engine.dispose()

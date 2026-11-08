@@ -98,6 +98,26 @@ def exercise_finance_writes(connection, role, client):
     assert client.post(f'/payments/{created[4]}/void',headers=headers(1),json={'reason':'again'}).status_code==400
     assert balance(1,1)==60 and balance(2,3)==180
     assert snapshot()==(before[0],before[1],before[2],before[3]+3)
+    # API rejection alone is insufficient: try rewriting already-voided
+    # evidence through SQL with the same restricted owner/headmaster role.
+    for uid,payment in ((1,created[4]),(3,created[1]),(2,created[2])):
+        with TenantContextSession(bind=connection,join_transaction_mode='create_savepoint') as db:
+            resolve_tenant_identity(db,str(uid))
+            original=tuple(db.execute(text(
+                'SELECT voided,voided_at,void_reason FROM public.payments WHERE id=:id'
+            ),{'id':payment}).one())
+            for assignment in ("void_reason='rewritten'",
+                    "voided_at=voided_at + interval '1 second'", "voided=false"):
+                try:
+                    db.execute(text(f'UPDATE public.payments SET {assignment} WHERE id=:id'),{'id':payment})
+                except DBAPIError as exc:
+                    assert exc.orig.sqlstate=='23514',(assignment,str(exc.orig))
+                    db.rollback()
+                else:
+                    raise AssertionError('Voided evidence was changed: '+assignment)
+            assert tuple(db.execute(text(
+                'SELECT voided,voided_at,void_reason FROM public.payments WHERE id=:id'
+            ),{'id':payment}).one())==original
     # Inspect append-only evidence as fixture owner, outside API request context.
     connection.execute(text('RESET ROLE'))
     try:
