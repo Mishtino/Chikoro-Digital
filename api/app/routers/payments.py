@@ -53,11 +53,11 @@ def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
 @router.post("", status_code=status.HTTP_201_CREATED)
 def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    student = db.get(Student, payload.student_id)
-    if student is None or student.school_id != sid:
+    student = db.query(Student.id).filter(Student.id == payload.student_id, Student.school_id == sid).first()
+    if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
     # Consistent lock order with Paynow settlement: school first, then invoices.
-    school = db.query(School).filter(School.id == sid).with_for_update().first()
+    school = db.query(School.id).filter(School.id == sid).with_for_update().first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
     if not is_valid_payment_amount(payload.amount):
@@ -182,7 +182,7 @@ def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrinc
         raise HTTPException(status_code=403, detail="School-scoped access required")
     # Use the same school -> payment lock order as payment recording and
     # Paynow settlement so a void cannot race with a new allocation.
-    school = db.query(School).filter(
+    school = db.query(School.id).filter(
         School.id == principal.school_id
     ).with_for_update().first()
     if school is None:
@@ -259,4 +259,3 @@ def get_invoice(invoice_id: int, principal: SupabasePrincipal = Depends(require_
         "balance": float(bal),
         "lines": [{"description": l.description, "amount": float(l.amount)} for l in lines],
     }
-

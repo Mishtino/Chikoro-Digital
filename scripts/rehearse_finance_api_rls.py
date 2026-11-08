@@ -148,6 +148,9 @@ def run():
                         assert client.get(f'/invoices/{1 if uid==2 else 3}',headers=headers).status_code==404
                         assert client.get('/invoices/90',headers=headers).status_code==404
                         assert client.get(f'/payments?school_id={1 if uid==2 else 2}',headers=headers).status_code==403
+                    if os.environ.get('CHIKORO_REHEARSAL_FINANCE_WRITES') == 'yes':
+                        from staging_finance_write_checks import exercise_finance_writes
+                        exercise_finance_writes(connection,role,client)
                 print("PASS: real finance read API with identity bootstrap and non-bypass RLS; two-school isolation; corrupt relationship denial; correct balances; unsupported roles and writes denied")
             finally:
                 outer.rollback()
