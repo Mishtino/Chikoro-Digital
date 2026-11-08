@@ -11,18 +11,20 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
 @router.get("")
 def list_notifications(school_id: Optional[int] = Query(None), status_filter: Optional[str] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id) if (principal.is_platform_admin or school_id is not None) else principal.school_id
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Notification).filter(Notification.school_id == sid)
@@ -33,20 +35,11 @@ def list_notifications(school_id: Optional[int] = Query(None), status_filter: Op
 
 @router.post("/process")
 def process_notifications(principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    if not principal.is_admin and principal.role not in ("owner", "headmaster"):
+    if not principal.is_platform_admin and principal.role not in ("owner", "headmaster"):
         raise HTTPException(status_code=403, detail="Not allowed")
-    queued_query = db.query(Notification).filter(Notification.status == "queued")
-    if not principal.is_admin:
-        if principal.school_id is None:
-            raise HTTPException(status_code=403, detail="School context required")
-        queued_query = queued_query.filter(Notification.school_id == principal.school_id)
-    queued = queued_query.order_by(Notification.id.asc()).all()
-    sent = 0
-    for n in queued:
-        # placeholder: actual delivery by channel would happen here
-        n.status = "sent"
-        n.sent_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(tzinfo=None)
-        n.attempts += 1
-        sent += 1
-    db.commit()
-    return {"processed": sent}
+    # Do not mark queued records as sent until a real email/SMS/push provider
+    # is configured and delivery outcomes can be recorded truthfully.
+    raise HTTPException(
+        status_code=501,
+        detail="Notification delivery is not configured. Queued notifications were not marked as sent.",
+    )

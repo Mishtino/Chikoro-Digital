@@ -4,8 +4,9 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text, func
 
 from app.database import get_db
@@ -13,6 +14,7 @@ from app.deps_supabase import SupabasePrincipal, require_supabase_roles
 from app.models.student import Student, Contact
 from app.models.school import School
 from app.models.user import User
+from app.services.class_access import assigned_class_names
 from app.services.auth import hash_password
 from app.services.ids import generate_student_number, generate_pin, hash_pin
 from app.services.audit import write_audit
@@ -31,6 +33,39 @@ class StudentCreate(BaseModel):
     school_id: Optional[int] = None
 
 
+
+class StudentProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    form: Optional[str] = Field(default=None, max_length=40)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_required_names(cls, value):
+        if value is None:
+            raise ValueError("Student names cannot be cleared")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Student names cannot be blank")
+        return normalized
+
+    @field_validator("form")
+    @classmethod
+    def normalize_form(cls, value):
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def require_changes(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one student profile field must be supplied")
+        return self
+
+
 class StudentOut(BaseModel):
     id: int
     school_id: int
@@ -40,6 +75,7 @@ class StudentOut(BaseModel):
     form: Optional[str] = None
     status: str
     activated: bool
+    portal_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,19 +87,24 @@ class StudentCreateResult(StudentOut):
 
 
 def _school_id(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required for admin")
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
 @router.post("", response_model=StudentCreateResult, status_code=status.HTTP_201_CREATED)
-def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
+def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _school_id(principal, payload.school_id)
-    school = db.get(School, sid)
+    # Serialize student-number allocation within a school. The school row lock
+    # remains held until commit, preventing concurrent admissions from reading
+    # the same count and generating the same student number.
+    school = db.query(School).filter(School.id == sid).with_for_update().first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
 
@@ -120,7 +161,13 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         db.flush()
         guardian_contact_id = contact.id
 
-    db.commit()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        # The database uniqueness constraint remains the final safeguard if a
+        # concurrent writer bypasses this endpoint's school-row lock.
+        raise HTTPException(status_code=409, detail="Student number or portal account conflicts with an existing record")
     db.refresh(student)
     write_audit(db, principal, "student.create", "student", student.id, {"number": number, "portal_enabled": bool(portal_email)}, school_id=sid)
     return StudentCreateResult(
@@ -132,6 +179,7 @@ def create_student(payload: StudentCreate, principal: SupabasePrincipal = Depend
         form=student.form,
         status=student.status,
         activated=bool(student.activated_at),
+        portal_enabled=bool(student.portal_user_id),
         pin=pin,
         guardian_contact_id=guardian_contact_id,
         portal_email=portal_email,
@@ -162,7 +210,7 @@ def issue_student_activation_pin(
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
     student.activation_pin_hash = hash_pin(pin)
     student.activation_expires_at = expires_at
-    db.commit()
+    db.flush()
     write_audit(db, principal, "student.activation.pin.issue", "student", student.id, {"expires_at": expires_at.isoformat()}, school_id=sid)
     return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
@@ -184,17 +232,24 @@ def issue_guardian_activation_pin(student_id: int, contact_id: int, principal: S
     pin = generate_pin(8)
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
     db.execute(text("UPDATE public.contacts SET guardian_activation_pin_hash=:pin_hash, guardian_activation_expires_at=:expires_at WHERE id=:id AND student_id=:student_id AND school_id=:school_id"), {"pin_hash": hash_pin(pin), "expires_at": expires_at, "id": contact_id, "student_id": student_id, "school_id": sid})
-    db.commit()
+    db.flush()
     write_audit(db, principal, "guardian.activation.pin.issue", "guardian_contact", contact_id, {"expires_at": expires_at.isoformat()}, school_id=sid)
     return {"activation_pin": pin, "expires_at": expires_at.isoformat()}
 
 
 @router.get("", response_model=List[StudentOut])
 def list_students(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    sid = _school_id(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
-    students = db.query(Student).filter(Student.school_id == sid).order_by(Student.id).all()
+    # School roster endpoints never accept a platform-wide identity.
+    if principal.is_admin or principal.is_platform_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    sid = _school_id(principal, school_id)
+    student_query = db.query(Student).filter(Student.school_id == sid)
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, sid) or set()
+        if not allowed_classes:
+            return []
+        student_query = student_query.filter(Student.form.in_(allowed_classes))
+    students = student_query.order_by(Student.id).all()
     return [
         StudentOut(
             id=s.id,
@@ -205,6 +260,7 @@ def list_students(school_id: Optional[int] = Query(None), principal: SupabasePri
             form=s.form,
             status=s.status,
             activated=bool(s.activated_at),
+            portal_enabled=bool(s.portal_user_id),
         )
         for s in students
     ]
@@ -212,11 +268,18 @@ def list_students(school_id: Optional[int] = Query(None), principal: SupabasePri
 
 @router.get("/{student_id}")
 def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
-    student = db.get(Student, student_id)
+    if principal.is_admin or principal.is_platform_admin or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.school_id == principal.school_id,
+    ).first()
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
-    if not principal.is_admin and principal.school_id != student.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    if principal.role == "teacher" and not principal.is_admin:
+        allowed_classes = assigned_class_names(db, principal, student.school_id) or set()
+        if student.form not in allowed_classes:
+            raise HTTPException(status_code=404, detail="Student not found")
     return {
         "id": student.id,
         "school_id": student.school_id,
@@ -227,3 +290,53 @@ def get_student(student_id: int, principal: SupabasePrincipal = Depends(require_
         "status": student.status,
         "activated": bool(student.activated_at),
     }
+
+
+@router.patch("/{student_id}", response_model=StudentOut)
+def update_student_profile(
+    student_id: int,
+    payload: StudentProfileUpdate,
+    principal: SupabasePrincipal = Depends(require_supabase_roles("owner", "headmaster")),
+    db: Session = Depends(get_db),
+):
+    sid = principal.school_id
+    if sid is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped administrator access required")
+
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.school_id == sid,
+    ).with_for_update().first()
+    if student is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    changes = {}
+    for field, new_value in payload.model_dump(exclude_unset=True).items():
+        old_value = getattr(student, field)
+        if old_value != new_value:
+            changes[field] = {"from": old_value, "to": new_value}
+            setattr(student, field, new_value)
+
+    if changes:
+        db.flush()
+        db.refresh(student)
+    write_audit(
+            db,
+            principal,
+            "student.profile_update",
+            "student",
+            student.id,
+            {"changes": changes},
+            school_id=sid,
+        )
+
+    return StudentOut(
+        id=student.id,
+        school_id=student.school_id,
+        student_number=student.student_number,
+        first_name=student.first_name,
+        last_name=student.last_name,
+        form=student.form,
+        status=student.status,
+        activated=bool(student.activated_at),
+    )

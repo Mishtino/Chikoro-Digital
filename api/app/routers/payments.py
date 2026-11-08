@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -29,27 +29,35 @@ class PaymentCreate(BaseModel):
 
 
 class VoidRequest(BaseModel):
-    reason: str
+    reason: str = Field(min_length=1, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("A non-empty void reason is required")
+        return value
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
-        if requested is None:
-            raise HTTPException(status_code=400, detail="school_id required")
-        return requested
-    if principal.school_id is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    # Payment routes are school-scoped; platform identities must use the
+    # separately permissioned platform APIs, never a legacy is_admin bypass.
+    if principal.is_admin or principal.school_id is None:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    student = db.get(Student, payload.student_id)
-    if student is None or student.school_id != sid:
+    student = db.query(Student.id).filter(Student.id == payload.student_id, Student.school_id == sid).first()
+    if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
     # Consistent lock order with Paynow settlement: school first, then invoices.
-    school = db.query(School).filter(School.id == sid).with_for_update().first()
+    school = db.query(School.id).filter(School.id == sid).with_for_update().first()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
     if not is_valid_payment_amount(payload.amount):
@@ -93,7 +101,13 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         )
         if to_decimal(payload.amount) > outstanding:
             raise HTTPException(status_code=422, detail="Payment amount exceeds the student's outstanding balance")
+    method = payload.method.strip().lower()
+    if not method:
+        raise HTTPException(status_code=422, detail="Payment method is required")
     reference = payload.reference.strip() if payload.reference else None
+    # Provider-confirmed payments are created only by the verified Paynow flow.
+    if method == "paynow" or (reference and reference.lower().startswith("paynow:")):
+        raise HTTPException(status_code=422, detail="Paynow payments must be recorded through verified provider settlement")
     if reference and db.query(Payment.id).filter(
         Payment.school_id == sid, Payment.reference == reference
     ).first():
@@ -103,7 +117,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         student_id=payload.student_id,
         amount=amount,
         currency=payload.currency.upper(),
-        method=payload.method,
+        method=method,
         reference=reference,
         received_by_user_id=principal.user_id,
     )
@@ -117,7 +131,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     )
     db.add(receipt)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         error_text = str(getattr(exc, "orig", exc))
@@ -132,7 +146,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
         raise
     db.refresh(payment)
     db.refresh(receipt)
-    write_audit(db, principal, "payment.record", "payment", payment.id, {"amount": float(payload.amount), "method": payload.method}, school_id=sid)
+    write_audit(db, principal, "payment.record", "payment", payment.id, {"amount": float(payload.amount), "method": method}, school_id=sid)
     return {
         "payment_id": payment.id,
         "receipt_number": receipt.receipt_number,
@@ -140,7 +154,7 @@ def record_payment(payload: PaymentCreate, principal: SupabasePrincipal = Depend
     }
 @router.get("")
 def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id)
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Payment).filter(Payment.school_id == sid)
@@ -164,17 +178,27 @@ def list_payments(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @router.post("/{payment_id}/void")
 def void_payment(payment_id: int, payload: VoidRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster')), db: Session = Depends(get_db)):
-    payment = db.get(Payment, payment_id)
+    if principal.school_id is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    # Use the same school -> payment lock order as payment recording and
+    # Paynow settlement so a void cannot race with a new allocation.
+    school = db.query(School.id).filter(
+        School.id == principal.school_id
+    ).with_for_update().first()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    payment = db.query(Payment).filter(
+        Payment.id == payment_id,
+        Payment.school_id == principal.school_id,
+    ).with_for_update().first()
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
-    if not principal.is_admin and principal.school_id != payment.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     if payment.voided:
         raise HTTPException(status_code=400, detail="Already voided")
     payment.voided = True
     payment.voided_at = datetime.now(timezone.utc).replace(tzinfo=None)
     payment.void_reason = payload.reason
-    db.commit()
+    db.flush()
     write_audit(db, principal, "payment.void", "payment", payment.id, {"reason": payload.reason}, school_id=payment.school_id)
     return {"status": "voided"}
 
@@ -184,7 +208,7 @@ invoices_router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 @invoices_router.get("")
 def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
+    sid = _sid(principal, school_id)
     if sid is None:
         raise HTTPException(status_code=403, detail="School context required")
     q = db.query(Invoice).filter(Invoice.school_id == sid)
@@ -212,12 +236,18 @@ def list_invoices(student_id: Optional[int] = Query(None), school_id: Optional[i
 
 @invoices_router.get("/{invoice_id}")
 def get_invoice(invoice_id: int, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    inv = db.get(Invoice, invoice_id)
+    if principal.school_id is None or principal.is_admin:
+        raise HTTPException(status_code=403, detail="School-scoped access required")
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.school_id == principal.school_id,
+    ).first()
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if not principal.is_admin and principal.school_id != inv.school_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    lines = db.query(InvoiceLine).filter(InvoiceLine.invoice_id == inv.id).all()
+    lines = db.query(InvoiceLine).filter(
+        InvoiceLine.invoice_id == inv.id,
+        InvoiceLine.school_id == principal.school_id,
+    ).all()
     bal = invoice_balance(db, inv)
     return {
         "id": inv.id,
@@ -229,4 +259,3 @@ def get_invoice(invoice_id: int, principal: SupabasePrincipal = Depends(require_
         "balance": float(bal),
         "lines": [{"description": l.description, "amount": float(l.amount)} for l in lines],
     }
-

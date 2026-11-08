@@ -115,9 +115,11 @@ def test_student_portal_fails_closed_when_account_maps_to_multiple_learners(clie
 
     fee_response = client.get("/portal/fee-status")
     results_response = client.get("/portal/results")
+    pdf_response = client.get("/portal/results/pdf")
 
     assert fee_response.status_code == 403
     assert results_response.status_code == 403
+    assert pdf_response.status_code == 403
     assert fee_response.json()["detail"] == "Student account is not uniquely linked"
     assert results_response.json()["detail"] == "Student account is not uniquely linked"
 
@@ -156,3 +158,116 @@ def test_student_portal_rejects_active_and_inactive_duplicate_mappings(client, d
         response.json()["detail"] == "Student account is not uniquely linked"
         for response in responses
     )
+
+
+def test_student_results_keep_same_named_subject_records_separate(client, db_session):
+    school = School(code="STU005", name="Duplicate Subject Names")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(
+        school_id=school.id, student_number="DUP-001", first_name="Rudo",
+        last_name="Moyo", status="active", portal_user_id=7300,
+    )
+    db_session.add(learner)
+    db_session.flush()
+    first = Subject(school_id=school.id, name="Mathematics", code="MATH-A")
+    second = Subject(school_id=school.id, name="Mathematics", code="MATH-B")
+    db_session.add_all([first, second])
+    db_session.flush()
+    assessments = [
+        Assessment(school_id=school.id, subject_id=first.id, name="Paper 1", weight=1, max_score=100),
+        Assessment(school_id=school.id, subject_id=second.id, name="Paper 2", weight=1, max_score=100),
+    ]
+    db_session.add_all(assessments)
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[0].id,
+             score=70, status="published"),
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=assessments[1].id,
+             score=90, status="published"),
+    ])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7300, school_id=school.id,
+        role="student", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/portal/results")
+    assert response.status_code == 200
+    assert len(response.json()["subjects"]) == 2
+    assert {row["average"] for row in response.json()["subjects"]} == {70, 90}
+    assert len({row["subject_id"] for row in response.json()["subjects"]}) == 2
+
+def test_student_term_comparison_compares_only_published_marks(client, db_session):
+    school = School(code="CMP001", name="Comparison School")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(
+        school_id=school.id, student_number="CMP-001", first_name="Tariro",
+        last_name="Moyo", status="active", portal_user_id=7400,
+    )
+    db_session.add(learner)
+    db_session.flush()
+    older = Term(school_id=school.id, name="Term 1", academic_year="2026",
+                 start_date=date(2026, 1, 1))
+    newer = Term(school_id=school.id, name="Term 2", academic_year="2026",
+                 start_date=date(2026, 5, 1))
+    db_session.add_all([older, newer])
+    db_session.flush()
+    subject = Subject(school_id=school.id, name="Mathematics")
+    db_session.add(subject)
+    db_session.flush()
+    old_assessment = Assessment(school_id=school.id, subject_id=subject.id,
+                                term_id=older.id, name="Term 1 exam", weight=1, max_score=100)
+    new_assessment = Assessment(school_id=school.id, subject_id=subject.id,
+                                term_id=newer.id, name="Term 2 exam", weight=1, max_score=100)
+    db_session.add_all([old_assessment, new_assessment])
+    db_session.flush()
+    db_session.add_all([
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=old_assessment.id,
+             score=65, status="published"),
+        Mark(school_id=school.id, student_id=learner.id, assessment_id=new_assessment.id,
+             score=80, status="published"),
+    ])
+    db_session.commit()
+    principal = SupabasePrincipal(
+        auth_user_id=uuid4(), user_id=7400, school_id=school.id,
+        role="student", is_admin=False,
+    )
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/portal/results/comparison")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["current_term"]["id"] == newer.id
+    assert data["previous_term"]["id"] == older.id
+    assert data["subjects"] == [{
+        "subject_id": subject.id, "subject": "Mathematics",
+        "current_average": 80.0, "previous_average": 65.0, "change": 15.0,
+    }]
+
+def test_student_can_download_own_published_report_card_pdf(client, db_session):
+    school = School(code="PDFSTU1", name="Student PDF School")
+    db_session.add(school)
+    db_session.flush()
+    learner = Student(school_id=school.id, student_number="PDF-STU-1",
+                      first_name="Rudo", last_name="Moyo", status="active",
+                      portal_user_id=7500)
+    subject = Subject(school_id=school.id, name="Mathematics")
+    db_session.add_all([learner, subject])
+    db_session.flush()
+    assessment = Assessment(school_id=school.id, subject_id=subject.id,
+                            name="Final", weight=1, max_score=100)
+    db_session.add(assessment)
+    db_session.flush()
+    db_session.add(Mark(school_id=school.id, student_id=learner.id,
+                        assessment_id=assessment.id, score=88, status="published"))
+    db_session.commit()
+    principal = SupabasePrincipal(auth_user_id=uuid4(), user_id=7500,
+                                  school_id=school.id, role="student", is_admin=False)
+    app.dependency_overrides[get_supabase_principal] = lambda: principal
+    response = client.get("/portal/results/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].endswith('report-card-PDF-STU-1.pdf"')
+    assert response.content.startswith(b"%PDF")
+

@@ -1,6 +1,7 @@
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { getSupabaseBrowserClient } from '../../lib/supabase';
+import Brand from '../../components/Brand';
 
 export default function PortalLogin() {
   const router = useRouter();
@@ -26,14 +27,17 @@ export default function PortalLogin() {
         throw new Error(profile.detail || 'Your account is not yet activated. Contact your school administrator.');
       }
       if (profile.role === 'parent') { router.push('/portal/parent'); return; }
-      if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have student portal access.'); }
+      if (['owner', 'headmaster'].includes(profile.role) && !profile.is_admin && profile.school_id) { router.push('/school-admin'); return; }
+      if (profile.role === 'bursar' && !profile.is_admin && profile.school_id) { router.push('/school-admin/finance'); return; }
+      if (profile.role === 'teacher' && !profile.is_admin && profile.school_id) { router.push('/school-admin/teacher'); return; }
+      if (profile.role !== 'student') { await supabase.auth.signOut(); throw new Error('This account does not have portal access.'); }
       router.push('/portal/fees');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }
   return (
     <main className="auth-shell">
       <section className="auth-visual">
-        <div className="brand-lockup"><span className="brand-mark">C</span><span>CHIKORO DIGITAL</span></div>
+        <div className="brand-lockup"><Brand inverse /></div>
         <div className="visual-copy"><span className="eyebrow">Your school, connected</span><h1>Learning starts with a connected community.</h1><p>One simple place for students and parents to stay informed, follow school fees and keep up with the school journey.</p></div>
         <div className="visual-foot">A smarter school experience · Chikoro Digital</div>
       </section>

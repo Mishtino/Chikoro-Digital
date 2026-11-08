@@ -264,3 +264,478 @@ def test_manual_payment_returns_conflict_for_duplicate_school_reference(
     payments = db_session.query(Payment).filter(Payment.school_id == school.id).all()
     assert len(payments) == 1
     assert payments[0].reference == "BANK-API-REF"
+
+
+
+def test_voided_payment_is_excluded_from_invoice_paid_balance(client, db_session):
+    school = School(code="PAY010", name="Voided Payment Balance")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-VOID-1",
+        first_name="Void", last_name="Payment", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-VOID-INV", currency="USD", total=100,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    recorded = client.post(
+        "/payments",
+        json={"student_id": student.id, "amount": 60, "currency": "USD",
+              "method": "cash", "invoice_ids": [invoice.id]},
+    )
+    assert recorded.status_code == 201
+    payment_id = recorded.json()["payment_id"]
+
+    voided = client.post(
+        f"/payments/{payment_id}/void",
+        json={"reason": "Duplicate cash entry"},
+    )
+    assert voided.status_code == 200
+    assert voided.json() == {"status": "voided"}
+
+    db_session.refresh(invoice)
+    from app.services.money import invoice_balance
+    assert invoice_balance(db_session, invoice) == 100
+    payment = db_session.query(Payment).filter(Payment.id == payment_id).one()
+    assert payment.voided is True
+    assert payment.void_reason == "Duplicate cash entry"
+
+
+def test_voiding_a_payment_twice_is_rejected(client, db_session):
+    school = School(code="PAY011", name="Repeated Void Guard")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="PAY-VOID-2",
+        first_name="Repeat", last_name="Void", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=school.id, student_id=student.id,
+        invoice_number="PAY-VOID-INV-2", currency="USD", total=30,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    recorded = client.post(
+        "/payments",
+        json={"student_id": student.id, "amount": 10, "currency": "USD",
+              "method": "cash", "invoice_ids": [invoice.id]},
+    )
+    assert recorded.status_code == 201
+    payment_id = recorded.json()["payment_id"]
+    first = client.post(f"/payments/{payment_id}/void", json={"reason": "Correction"})
+    second = client.post(f"/payments/{payment_id}/void", json={"reason": "Repeated correction"})
+
+    assert first.status_code == 200
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Already voided"
+
+
+def test_school_owner_cannot_void_another_schools_payment(client, db_session):
+    own = School(code="PAY012", name="Void Scope Own School")
+    other = School(code="PAY013", name="Void Scope Other School")
+    db_session.add_all([own, other])
+    db_session.flush()
+    student = Student(
+        school_id=other.id, student_number="PAY-VOID-FOREIGN",
+        first_name="Foreign", last_name="Payment", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    payment = Payment(
+        school_id=other.id, student_id=student.id, amount=5,
+        currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(own.id)
+
+    response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "Unauthorized cross-school attempt"},
+    )
+
+    assert response.status_code == 404
+    db_session.refresh(payment)
+    assert payment.voided is False
+
+
+def test_payment_reads_reject_mismatched_school_filter(client, db_session):
+    school = School(code="PAY008", name="Payment Tenant Scope")
+    other_school = School(code="PAY009", name="Other Payment Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    payments = client.get(f"/payments?school_id={other_school.id}")
+    invoices = client.get(f"/invoices?school_id={other_school.id}")
+
+    assert payments.status_code == 403
+    assert invoices.status_code == 403
+
+
+def test_payment_and_invoice_detail_reads_hide_other_school_records(client, db_session):
+    school = School(code="PAY010", name="Payment Detail Tenant")
+    other_school = School(code="PAY011", name="Other Payment Detail Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    student = Student(
+        school_id=other_school.id, student_number="PAY-OTHER-1",
+        first_name="Other", last_name="Tenant", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    invoice = Invoice(
+        school_id=other_school.id, student_id=student.id,
+        invoice_number="PAY-OTHER-INV", currency="USD", total=20,
+        status="issued",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    payment = Payment(
+        school_id=other_school.id, student_id=student.id,
+        amount=5, currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    invoice_response = client.get(f"/invoices/{invoice.id}")
+    payment_response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "cross-tenant test"},
+    )
+
+    assert invoice_response.status_code == 404
+    assert payment_response.status_code == 404
+
+
+
+def test_database_rejects_cross_school_payment_allocation(db_session):
+    # This test specifically verifies the database-level composite tenant FKs.
+    db_session.connection().exec_driver_sql("PRAGMA foreign_keys=ON")
+    school = School(code="PAY012", name="Allocation Tenant")
+    other_school = School(code="PAY013", name="Foreign Allocation Tenant")
+    db_session.add_all([school, other_school])
+    db_session.flush()
+    own_student = Student(
+        school_id=school.id, student_number="PAY-ALLOC-OWN",
+        first_name="Own", last_name="Learner", status="active",
+    )
+    foreign_student = Student(
+        school_id=other_school.id, student_number="PAY-ALLOC-FOREIGN",
+        first_name="Foreign", last_name="Learner", status="active",
+    )
+    db_session.add_all([own_student, foreign_student])
+    db_session.flush()
+    invoice = Invoice(
+        school_id=other_school.id, student_id=foreign_student.id,
+        invoice_number="PAY-ALLOC-INV", currency="USD", total=10,
+        status="issued",
+    )
+    payment = Payment(
+        school_id=school.id, student_id=own_student.id,
+        amount=10, currency="USD", method="cash",
+    )
+    db_session.add_all([invoice, payment])
+    db_session.flush()
+
+    db_session.add(PaymentAllocation(
+        school_id=school.id, payment_id=payment.id,
+        invoice_id=invoice.id, amount=10,
+    ))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+    db_session.connection().exec_driver_sql("PRAGMA foreign_keys=OFF")
+
+
+
+
+
+def test_void_payment_rejects_blank_reason_without_mutating_payment(client, db_session):
+    school = School(code="PAYVOID14", name="Void Reason Guard")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="VOID-REASON-1",
+        first_name="Audit", last_name="Guard", status="active",
+    )
+    db_session.add(student)
+    db_session.flush()
+    payment = Payment(
+        school_id=school.id, student_id=student.id,
+        amount=10, currency="USD", method="cash",
+    )
+    db_session.add(payment)
+    db_session.commit()
+
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+    response = client.post(
+        f"/payments/{payment.id}/void",
+        json={"reason": "   "},
+    )
+
+    assert response.status_code == 422
+    db_session.refresh(payment)
+    assert payment.voided is False
+    assert payment.void_reason is None
+
+
+def test_invoice_generation_rejects_mixed_currency_fee_lines(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+    from app.models.payment import InvoiceLine
+
+    school = School(code="FEEMIX15", name="Mixed Currency Guard")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Invalid Mixed Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add_all([
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Tuition", amount=10, currency="USD"),
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Other", amount=10, currency="ZWL"),
+    ])
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure contains mixed currencies"
+    assert db_session.query(Invoice).count() == 0
+    assert db_session.query(InvoiceLine).count() == 0
+
+
+def test_invoice_generation_rejects_total_exceeding_numeric_column(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEELIMIT16", name="Invoice Total Limit")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 2", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Oversized Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add_all([
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="First", amount=6000000000, currency="USD"),
+        FeeStructureItem(school_id=school.id, fee_structure_id=structure.id,
+                         description="Second", amount=6000000000, currency="USD"),
+    ])
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
+    assert db_session.query(Invoice).count() == 0
+
+
+def test_invoice_generation_does_not_reuse_gap_in_invoice_sequence(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEGAP17", name="Invoice Sequence Gap")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="FEE-GAP-STUDENT",
+        first_name="Invoice", last_name="Sequence", status="active",
+    )
+    db_session.add(student)
+    term = Term(school_id=school.id, name="Term 3", academic_year="2026")
+    db_session.add(term)
+    db_session.flush()
+    db_session.add_all([
+        Invoice(school_id=school.id, student_id=student.id,
+                invoice_number="INV-00001", currency="USD", total=10,
+                status="void"),
+        Invoice(school_id=school.id, student_id=student.id,
+                invoice_number="INV-00003", currency="USD", total=10,
+                status="void"),
+    ])
+    structure = FeeStructure(school_id=school.id, term_id=term.id, name="Current Fees")
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add(FeeStructureItem(
+        school_id=school.id, fee_structure_id=structure.id,
+        description="Tuition", amount=10, currency="USD",
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 200
+    assert response.json()["created"] == 1
+    invoice = db_session.query(Invoice).filter(Invoice.term_id == term.id).one()
+    assert invoice.invoice_number == "INV-00004"
+
+
+def test_invoice_generation_without_form_does_not_bill_form_specific_fees(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEFORM18", name="Form Fee Isolation")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="FORM-ONE-1",
+        first_name="Form", last_name="Learner", status="active",
+        form="Form 1",
+    )
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add_all([student, term])
+    db_session.flush()
+    structure = FeeStructure(
+        school_id=school.id, term_id=term.id,
+        form="Form 1", name="Form One Fees",
+    )
+    db_session.add(structure)
+    db_session.flush()
+    db_session.add(FeeStructureItem(
+        school_id=school.id, fee_structure_id=structure.id,
+        description="Tuition", amount=20, currency="USD",
+    ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 404
+    assert db_session.query(Invoice).count() == 0
+
+
+def test_invoice_generation_rejects_ambiguous_fee_structures(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEEAMB19", name="Ambiguous Fee Protection")
+    db_session.add(school)
+    db_session.flush()
+    student = Student(
+        school_id=school.id, student_number="AMBIGUOUS-1",
+        first_name="Ambiguous", last_name="Fee", status="active",
+    )
+    term = Term(school_id=school.id, name="Term 2", academic_year="2026")
+    db_session.add_all([student, term])
+    db_session.flush()
+    for name in ("Standard Fees", "Alternative Fees"):
+        structure = FeeStructure(
+            school_id=school.id, term_id=term.id, name=name,
+        )
+        db_session.add(structure)
+        db_session.flush()
+        db_session.add(FeeStructureItem(
+            school_id=school.id, fee_structure_id=structure.id,
+            description="Tuition", amount=20, currency="USD",
+        ))
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/invoices/generate", json={"term_id": term.id})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Multiple fee structures match term/form"
+    assert db_session.query(Invoice).count() == 0
+
+
+def test_fee_structure_rejects_fractional_cents_before_persisting(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEECENTS20", name="Fee Precision Protection")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-structures", json={
+        "term_id": term.id,
+        "name": "Invalid fractional cents",
+        "items": [{"description": "Tuition", "amount": 12.345, "currency": "USD"}],
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeStructure).count() == 0
+    assert db_session.query(FeeStructureItem).count() == 0
+
+
+def test_fee_item_rejects_fractional_cents_before_persisting(client, db_session):
+    from app.models.fee import FeeItem
+
+    school = School(code="FEEITEM21", name="Fee Item Precision Protection")
+    db_session.add(school)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-items", json={
+        "name": "Invalid fractional cents",
+        "amount": 12.345,
+        "currency": "USD",
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeItem).count() == 0
+
+
+def test_fee_structure_rejects_total_exceeding_invoice_capacity(client, db_session):
+    from app.models.fee import Term, FeeStructure, FeeStructureItem
+
+    school = School(code="FEETOTAL22", name="Fee Total Limit")
+    db_session.add(school)
+    db_session.flush()
+    term = Term(school_id=school.id, name="Term 1", academic_year="2026")
+    db_session.add(term)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-structures", json={
+        "term_id": term.id,
+        "name": "Too expensive",
+        "items": [
+            {"description": "Tuition", "amount": 6000000000, "currency": "USD"},
+            {"description": "Boarding", "amount": 6000000000, "currency": "USD"},
+        ],
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Fee structure total exceeds invoice limit"
+    assert db_session.query(FeeStructure).count() == 0
+    assert db_session.query(FeeStructureItem).count() == 0
+
+
+def test_fee_item_rejects_non_ascii_currency_code(client, db_session):
+    from app.models.fee import FeeItem
+
+    school = School(code="FEECUR23", name="Fee Currency Validation")
+    db_session.add(school)
+    db_session.commit()
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(school.id)
+
+    response = client.post("/fees/fee-items", json={
+        "name": "Tuition", "amount": "10.00", "currency": "ÜSD",
+    })
+
+    assert response.status_code == 422
+    assert db_session.query(FeeItem).count() == 0

@@ -1,5 +1,5 @@
 from datetime import date
-import math
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -38,7 +38,7 @@ class TermOut(BaseModel):
 
 class FeeItemCreate(BaseModel):
     name: str
-    amount: float
+    amount: Decimal
     currency: str = "USD"
     applies_to_form: Optional[str] = None
     school_id: Optional[int] = None
@@ -68,12 +68,14 @@ class GenerateInvoicesRequest(BaseModel):
 
 
 def _sid(principal: SupabasePrincipal, requested: Optional[int]) -> int:
-    if principal.is_admin:
+    if principal.is_platform_admin:
         if requested is None:
             raise HTTPException(status_code=400, detail="school_id required")
         return requested
     if principal.school_id is None:
         raise HTTPException(status_code=403, detail="School context required")
+    if requested is not None and requested != principal.school_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return principal.school_id
 
 
@@ -84,40 +86,42 @@ def create_term(payload: TermCreate, principal: SupabasePrincipal = Depends(requ
         db.query(Term).filter(Term.school_id == sid).update({"is_current": False})
     term = Term(school_id=sid, name=payload.name, academic_year=payload.academic_year, start_date=payload.start_date, end_date=payload.end_date, is_current=payload.is_current)
     db.add(term)
-    db.commit()
+    db.flush()
     db.refresh(term)
     write_audit(db, principal, "term.create", "term", term.id, {"name": term.name}, school_id=sid)
     return term
 
 
 @router.get("/terms", response_model=List[TermOut])
-def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
+def list_terms(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar', 'teacher')), db: Session = Depends(get_db)):
+    sid = _sid(principal, school_id)
     return db.query(Term).filter(Term.school_id == sid).order_by(Term.id).all()
 
 
 @router.post("/fee-items", response_model=FeeItemOut, status_code=status.HTTP_201_CREATED)
 def create_fee_item(payload: FeeItemCreate, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
-    if not math.isfinite(payload.amount) or payload.amount <= 0:
+    amount = Decimal(str(payload.amount))
+    if not amount.is_finite() or amount <= 0:
         raise HTTPException(status_code=422, detail="Fee amount must be a finite positive value")
+    if amount > Decimal("9999999999.99") or amount.as_tuple().exponent < -2:
+        raise HTTPException(status_code=422, detail="Fee amount must fit NUMERIC(12,2) without rounding")
     currency = payload.currency.upper()
-    if len(currency) != 3 or not currency.isalpha():
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
         raise HTTPException(status_code=422, detail="Currency must be a three-letter code")
-    item = FeeItem(school_id=sid, name=payload.name, amount=payload.amount, currency=currency, applies_to_form=payload.applies_to_form)
+    item = FeeItem(school_id=sid, name=payload.name, amount=amount, currency=currency, applies_to_form=payload.applies_to_form)
     db.add(item)
-    db.commit()
+    db.flush()
     db.refresh(item)
+    write_audit(db, principal, "fee_item.create", "fee_item", item.id, {
+        "name": item.name, "amount": item.amount, "currency": item.currency,
+    }, school_id=sid)
     return item
 
 
 @router.get("/fee-items", response_model=List[FeeItemOut])
 def list_fee_items(school_id: Optional[int] = Query(None), principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
-    sid = _sid(principal, school_id) if (principal.is_admin or school_id is not None) else principal.school_id
-    if sid is None:
-        raise HTTPException(status_code=403, detail="School context required")
+    sid = _sid(principal, school_id)
     return db.query(FeeItem).filter(FeeItem.school_id == sid).order_by(FeeItem.id).all()
 
 
@@ -129,17 +133,23 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one fee item is required")
     currencies = set()
+    structure_total = Decimal("0")
     for item in payload.items:
         item_currency = str(item.get("currency", "USD")).upper()
-        if len(item_currency) != 3 or not item_currency.isalpha():
+        if len(item_currency) != 3 or not item_currency.isascii() or not item_currency.isalpha():
             raise HTTPException(status_code=422, detail="Fee currency must be a three-letter code")
         currencies.add(item_currency)
         try:
-            item_amount = float(item.get("amount", 0))
-        except (TypeError, ValueError):
+            item_amount = Decimal(str(item.get("amount", 0)))
+        except (ValueError, ArithmeticError):
             raise HTTPException(status_code=422, detail="Fee amounts must be valid numbers")
-        if not math.isfinite(item_amount) or item_amount <= 0:
+        if not item_amount.is_finite() or item_amount <= 0:
             raise HTTPException(status_code=422, detail="Fee amounts must be finite positive values")
+        if item_amount > Decimal("9999999999.99") or item_amount.as_tuple().exponent < -2:
+            raise HTTPException(status_code=422, detail="Fee amounts must fit NUMERIC(12,2) without rounding")
+        structure_total += item_amount
+        if structure_total > Decimal("9999999999.99"):
+            raise HTTPException(status_code=422, detail="Fee structure total exceeds invoice limit")
         fee_item_id = item.get("fee_item_id")
         if fee_item_id is not None:
             fee_item = db.query(FeeItem).filter(FeeItem.id == fee_item_id, FeeItem.school_id == sid).first()
@@ -162,7 +172,7 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
             currency=str(it.get("currency", "USD")).upper(),
         )
         db.add(line)
-    db.commit()
+    db.flush()
     db.refresh(fs)
     write_audit(db, principal, "fee_structure.create", "fee_structure", fs.id, {"name": fs.name}, school_id=sid)
     return {"id": fs.id}
@@ -171,39 +181,83 @@ def create_fee_structure(payload: FeeStructureCreate, principal: SupabasePrincip
 @router.post("/invoices/generate")
 def generate_invoices(payload: GenerateInvoicesRequest, principal: SupabasePrincipal = Depends(require_supabase_roles('owner', 'headmaster', 'bursar')), db: Session = Depends(get_db)):
     sid = _sid(principal, payload.school_id)
+    # Serialize invoice generation within a school. This prevents concurrent
+    # requests from allocating the same invoice numbers or issuing duplicate
+    # invoices for the same learner and term.
+    school = db.query(School).filter(School.id == sid).with_for_update().first()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
     term = db.get(Term, payload.term_id)
     if term is None or term.school_id != sid:
         raise HTTPException(status_code=404, detail="Term not found")
     fs_query = db.query(FeeStructure).filter(FeeStructure.school_id == sid, FeeStructure.term_id == payload.term_id)
     if payload.form:
         fs_query = fs_query.filter(FeeStructure.form == payload.form)
-    fee_structure = fs_query.first()
-    if fee_structure is None:
+    else:
+        # Never apply a form-specific fee structure to every learner.
+        fs_query = fs_query.filter(FeeStructure.form.is_(None))
+    # Never silently choose an arbitrary structure when a term/form has
+    # multiple configurations. Billing must be explicit and reproducible.
+    fee_structures = fs_query.limit(2).all()
+    if not fee_structures:
         raise HTTPException(status_code=404, detail="Fee structure not found for term/form")
+    if len(fee_structures) > 1:
+        raise HTTPException(status_code=409, detail="Multiple fee structures match term/form")
+    fee_structure = fee_structures[0]
 
-    items = db.query(FeeStructureItem).filter(FeeStructureItem.fee_structure_id == fee_structure.id).all()
-    total = sum(float(i.amount) for i in items)
-    currency = items[0].currency if items else "USD"
+    items = db.query(FeeStructureItem).filter(
+        FeeStructureItem.fee_structure_id == fee_structure.id,
+        FeeStructureItem.school_id == sid,
+    ).all()
+    if not items:
+        raise HTTPException(status_code=422, detail="Fee structure has no items to invoice")
+    # Never calculate billed totals with binary floating point. Validate
+    # persisted lines again in case they predate current input validation.
+    currencies = {str(item.currency).upper() for item in items}
+    if len(currencies) != 1:
+        raise HTTPException(status_code=422, detail="Fee structure contains mixed currencies")
+    if any(len(code) != 3 or not code.isascii() or not code.isalpha() for code in currencies):
+        raise HTTPException(status_code=422, detail="Fee structure contains invalid currencies")
+    amounts = [Decimal(str(item.amount)) for item in items]
+    if any(not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")) for amount in amounts):
+        raise HTTPException(status_code=422, detail="Fee structure contains invalid monetary amounts")
+    total = sum(amounts, Decimal("0"))
+    # The invoice total is stored in NUMERIC(12, 2).
+    if total > Decimal("9999999999.99"):
+        raise HTTPException(status_code=422, detail="Fee structure total exceeds invoice limit")
+    currency = next(iter(currencies))
 
     q = db.query(Student).filter(Student.school_id == sid, Student.status == "active")
     if payload.form:
         q = q.filter(Student.form == payload.form)
     students = q.all()
 
+    # Derive the next number from the highest issued sequence, not row
+    # count: deleted or imported invoice gaps must never cause number reuse.
+    existing_numbers = db.query(Invoice.invoice_number).filter(
+        Invoice.school_id == sid
+    ).all()
+    highest_number = 0
+    for (number,) in existing_numbers:
+        if isinstance(number, str) and number.startswith("INV-"):
+            suffix = number[4:]
+            if suffix.isdigit():
+                highest_number = max(highest_number, int(suffix))
+
     created = 0
     for st in students:
         exists = db.query(Invoice).filter(Invoice.school_id == sid, Invoice.student_id == st.id, Invoice.term_id == term.id).first()
         if exists:
             continue
-        count = db.query(Invoice).filter(Invoice.school_id == sid).count()
-        inv_number = f"INV-{count + 1:05d}"
+        highest_number += 1
+        inv_number = f"INV-{highest_number:05d}"
         inv = Invoice(school_id=sid, student_id=st.id, term_id=term.id, invoice_number=inv_number, currency=currency, total=total)
         db.add(inv)
         db.flush()
         for it in items:
             db.add(InvoiceLine(school_id=sid, invoice_id=inv.id, description=it.description or "Fee", amount=it.amount))
         created += 1
-    db.commit()
+    db.flush()
     write_audit(db, principal, "invoices.generate", "term", term.id, {"created": created, "form": payload.form}, school_id=sid)
     return {"created": created}
 

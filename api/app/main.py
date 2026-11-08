@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications, platform_audit, platform_access, platform_staff
+from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications, platform_audit, platform_access, platform_staff, school_staff, school_admin, attendance, timetable, classes, parent_teacher, homework
 
 logger = logging.getLogger("chikoro.security")
 
@@ -32,6 +32,20 @@ except Exception:
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
+
+
+@app.middleware("http")
+async def security_response_headers(request, call_next):
+    """Apply baseline browser-facing security headers to every API response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cache-Control", "no-store")
+    if settings.env.lower() == "production":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -62,3 +76,10 @@ app.include_router(notifications.router)
 app.include_router(platform_audit.router)
 app.include_router(platform_access.router)
 app.include_router(platform_staff.router)
+app.include_router(school_staff.router)
+app.include_router(school_admin.router)
+app.include_router(attendance.router)
+app.include_router(timetable.router)
+app.include_router(classes.router)
+app.include_router(parent_teacher.router)
+app.include_router(homework.router)

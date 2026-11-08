@@ -10,3 +10,4 @@ httpx==0.28.1
 python-multipart==0.0.32
 cryptography==50.0.2
 psycopg==3.3.6
+reportlab>=4.2,<5.0

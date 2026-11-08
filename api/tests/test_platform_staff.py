@@ -208,6 +208,58 @@ def _create_managed_staff(db_session, role="vortex_support", active=True):
     return auth_id, local
 
 
+
+def test_platform_staff_listing_excludes_mismatched_or_tenant_linked_identities(
+    client, seed_two_schools, db_session, monkeypatch
+):
+    _install_sqlite_profiles(db_session, monkeypatch)
+    valid_auth_id, valid_user = _create_managed_staff(db_session, role="vortex_support")
+    tenant_user = seed_two_schools["u1"]
+    tenant_auth_id = str(uuid4())
+    mismatched_user = User(
+        email=f"mismatch-{uuid4().hex[:8]}@example.com",
+        full_name="Mismatched Role",
+        password_hash="not-a-login-password",
+        role="teacher",
+        school_id=None,
+        is_active=True,
+        is_admin=False,
+    )
+    admin_flag_user = User(
+        email=f"admin-flag-{uuid4().hex[:8]}@example.com",
+        full_name="Unexpected Admin Flag",
+        password_hash="not-a-login-password",
+        role="vortex_support",
+        school_id=None,
+        is_active=True,
+        is_admin=True,
+    )
+    db_session.add_all([mismatched_user, admin_flag_user])
+    db_session.flush()
+    db_session.execute(sql_text("""
+        INSERT INTO profiles (id, local_user_id, role, school_id, is_active, created_at, updated_at)
+        VALUES
+          (:tenant_auth, :tenant_id, 'vortex_support', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+          (:mismatch_auth, :mismatch_id, 'vortex_support', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+          (:admin_auth, :admin_id, 'vortex_support', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    """), {
+        "tenant_auth": tenant_auth_id,
+        "tenant_id": tenant_user.id,
+        "mismatch_auth": str(uuid4()),
+        "mismatch_id": mismatched_user.id,
+        "admin_auth": str(uuid4()),
+        "admin_id": admin_flag_user.id,
+    })
+    db_session.commit()
+
+    owner = seed_two_schools["admin"]
+    app.dependency_overrides[get_supabase_principal] = lambda: _owner(owner)
+    response = client.get("/platform/staff")
+
+    assert response.status_code == 200
+    listed_ids = {row["auth_user_id"] for row in response.json()}
+    assert listed_ids == {valid_auth_id}
+
 def test_owner_can_disable_and_reenable_platform_staff(client, seed_two_schools, db_session, monkeypatch):
     _install_sqlite_profiles(db_session, monkeypatch)
     auth_id, local = _create_managed_staff(db_session)

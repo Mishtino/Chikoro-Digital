@@ -1,0 +1,22 @@
+services:
+  chikoro-local-postgres:
+    image: postgres:17-alpine
+    container_name: chikoro-local-postgres
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_DB: chikoro_local
+      POSTGRES_USER: chikoro_local
+      POSTGRES_PASSWORD: local_only_change_me
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - chikoro_local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chikoro_local -d chikoro_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  chikoro_local_postgres_data:

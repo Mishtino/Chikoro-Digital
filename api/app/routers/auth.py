@@ -13,6 +13,8 @@ from sqlalchemy import text, func
 from fastapi.security import HTTPAuthorizationCredentials
 from app.models.user import User
 from app.models.student import Student
+from app.models.school import School
+from app.models.audit import AuditLog
 from app.services.auth import hash_password
 from app.services.ids import verify_pin
 from app.services.supabase_auth import verify_supabase_access_token
@@ -26,6 +28,30 @@ class ParentActivationRequest(BaseModel):
 
 class StudentActivationRequest(BaseModel):
     pin: str
+
+
+def _activation_failed_attempts(db: Session, action: str, entity_type: str, email_hash: str) -> int:
+    """Serialize per-email activation attempts before checking the rolling limit.
+
+    The transaction-scoped advisory lock also covers emails with no matching
+    contact/student rows, where row-level locks cannot protect the rate limit.
+    """
+    lock_key = f"chikoro:{action}:{email_hash}"
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+        {"lock_key": lock_key},
+    )
+    return db.execute(text("""
+        SELECT count(*) FROM public.audit_logs
+        WHERE action = :action
+          AND entity_type = :entity_type
+          AND entity_id = :email_hash
+          AND created_at > now() - interval '1 hour'
+    """), {
+        "action": action,
+        "entity_type": entity_type,
+        "email_hash": email_hash,
+    }).scalar_one()
 
 
 @router.post("/bootstrap-admin")
@@ -90,6 +116,78 @@ def bootstrap_first_admin(
     return {"message": "The verified platform administrator identity has been linked. You can now sign in."}
 
 
+
+@router.post("/staff/activate")
+def activate_school_staff_account(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    """Activate only the pre-linked staff identity after Supabase verifies its invite email."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Supabase bearer token required")
+    claims = verify_supabase_access_token(credentials.credentials)
+    auth_id = claims["sub"]
+
+    auth_user = db.execute(text("""
+        SELECT email, email_confirmed_at
+        FROM auth.users
+        WHERE id = CAST(:auth_id AS uuid)
+    """), {"auth_id": auth_id}).mappings().first()
+    if not auth_user or not auth_user["email"] or auth_user["email_confirmed_at"] is None:
+        raise HTTPException(status_code=403, detail="Accept the staff invitation and verify your email first")
+
+    profile = db.execute(text("""
+        SELECT p.local_user_id, p.role, p.school_id, p.is_active,
+               u.email AS local_email, u.role AS local_role,
+               u.school_id AS local_school_id, u.is_active AS local_is_active,
+               u.is_admin
+        FROM public.profiles AS p
+        JOIN public.users AS u ON u.id = p.local_user_id
+        WHERE p.id = CAST(:auth_id AS uuid)
+        FOR UPDATE OF p, u
+    """), {"auth_id": auth_id}).mappings().first()
+    if not profile or profile["role"] not in {"headmaster", "bursar", "teacher"}:
+        raise HTTPException(status_code=403, detail="No pending school staff invitation is linked to this identity")
+    if (
+        profile["local_email"].strip().lower() != auth_user["email"].strip().lower()
+        or profile["local_role"] != profile["role"]
+        or profile["local_school_id"] != profile["school_id"]
+        or bool(profile["is_admin"])
+        or profile["school_id"] is None
+    ):
+        raise HTTPException(status_code=409, detail="The staff identity does not match its school invitation")
+
+    school = db.query(School).filter(School.id == profile["school_id"]).with_for_update().first()
+    if school is None or school.status != "live":
+        raise HTTPException(status_code=409, detail="The school is not active for staff account activation")
+
+    if bool(profile["is_active"]) and bool(profile["local_is_active"]):
+        return {"message": "Staff account is already active", "role": profile["role"], "school_id": profile["school_id"]}
+    if bool(profile["is_active"]) or bool(profile["local_is_active"]):
+        raise HTTPException(status_code=409, detail="Staff account activation state is inconsistent")
+
+    db.execute(text("""
+        UPDATE public.profiles
+        SET is_active = true, updated_at = now()
+        WHERE id = CAST(:auth_id AS uuid) AND is_active = false
+    """), {"auth_id": auth_id})
+    local_user = db.query(User).filter(User.id == profile["local_user_id"]).with_for_update().first()
+    if local_user is None or local_user.is_active:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Staff account activation state changed; sign in again")
+    local_user.is_active = True
+    db.add(AuditLog(
+        school_id=profile["school_id"],
+        actor_user_id=local_user.id,
+        action="school.staff.activated",
+        entity_type="school_staff",
+        entity_id=auth_id,
+        details={"role": profile["role"], "email_verified": True},
+    ))
+    db.commit()
+    return {"message": "School staff account activated successfully", "role": profile["role"], "school_id": profile["school_id"]}
+
+
 @router.post("/parent/activate")
 def activate_parent_account(
     payload: ParentActivationRequest,
@@ -111,13 +209,9 @@ def activate_parent_account(
         raise HTTPException(status_code=403, detail="Verify your email address before activating the parent portal")
 
     email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
-    failed_attempts = db.execute(text("""
-        SELECT count(*) FROM public.audit_logs
-        WHERE action = 'guardian.activation.failed'
-          AND entity_type = 'guardian_email_hash'
-          AND entity_id = :email_hash
-          AND created_at > now() - interval '1 hour'
-    """), {"email_hash": email_hash}).scalar_one()
+    failed_attempts = _activation_failed_attempts(
+        db, "guardian.activation.failed", "guardian_email_hash", email_hash
+    )
     if failed_attempts >= 5:
         raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
 
@@ -229,13 +323,9 @@ def activate_student_account(
         raise HTTPException(status_code=403, detail="Verify your email address before activating the student portal")
 
     email_hash = hashlib.sha256(auth_user["email"].lower().encode("utf-8")).hexdigest()
-    failed_attempts = db.execute(text("""
-        SELECT count(*) FROM public.audit_logs
-        WHERE action = 'student.activation.failed'
-          AND entity_type = 'student_email_hash'
-          AND entity_id = :email_hash
-          AND created_at > now() - interval '1 hour'
-    """), {"email_hash": email_hash}).scalar_one()
+    failed_attempts = _activation_failed_attempts(
+        db, "student.activation.failed", "student_email_hash", email_hash
+    )
     if failed_attempts >= 5:
         raise HTTPException(status_code=429, detail="Too many activation attempts. Ask your school to issue a fresh PIN later.")
 

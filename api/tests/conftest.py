@@ -16,6 +16,8 @@ from app.services.auth import hash_password
 
 TEST_DB_URL = "sqlite:///:memory:"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
