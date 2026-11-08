@@ -17,3 +17,13 @@ The rehearsal covers missing context; school A/B visibility; denied cross-school
 - Validate connection-pool behavior in the deployed topology, Auth/Storage integration, advisors, migration recovery and rollback. Keep the existing production connection and feature gates unchanged until reviewed release approval.
 
 References: [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) and [SQLAlchemy Session events](https://docs.sqlalchemy.org/en/21/orm/session_events.html).
+
+## Verified identity bootstrap rehearsal
+
+`resolve_tenant_identity()` is an opt-in wrapper which verifies the access token using the existing verifier, sets only its verified subject, and invokes the existing live-profile resolver. Only after the resolver checks profile/local-user role, school and active-state parity does it attach full tenant context, including to the already-open transaction. It clears context and rolls back on rejection. No school or role is copied from JWT metadata. It is not wired into production dependencies.
+
+`scripts/rehearse_tenant_identity.py` runs before the financial rehearsal and refuses any nonempty public schema. Within one outer transaction it creates representative users/profiles columns and synthetic rows, a non-owner/non-bypass NOLOGIN role, own-profile SELECT and linked-own-user SELECT policies, and column-specific SELECT grants that exclude password hashes. It exercises the real profile resolver and wrapper. All fixture DDL, role creation and rows are rolled back, and cleanup is checked before the financial rehearsal starts. It requires the loopback guard and `CHIKORO_REHEARSAL_IDENTITY=yes`.
+
+Cases include missing identity, two schools, inactive profile, inactive user, pending/unlinked account, absent profile, role mismatch, school mismatch, forged user metadata, denied password-hash reads and identity writes, failed-token cleanup, context promotion, commit/rollback behavior and tenant-free platform identity without implicit platform-admin rights. The token verifier is mocked at its existing boundary in this rehearsal; existing API tests remain responsible for cryptographic JWT verification. Representative table columns and fixture policies are not a complete Supabase staging clone or an approved migration.
+
+Remaining gates still include full policy review and implementation for actual application tables, restricted-role API integration, real Supabase Auth/Storage tests and the exceptional activation/callback/reconciliation workflows.

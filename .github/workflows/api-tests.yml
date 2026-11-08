@@ -55,6 +55,13 @@ jobs:
           ENV: test
           DEBUG: "false"
         run: python -m pytest -q api/tests
+      - name: Rehearse verified identity bootstrap under isolated PostgreSQL RLS
+        env:
+          ENV: test
+          DEBUG: "false"
+          DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
+          CHIKORO_REHEARSAL_IDENTITY: "yes"
+        run: python scripts/rehearse_tenant_identity.py
       - name: Rehearse financial migration against isolated PostgreSQL 17
         env:
           DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local

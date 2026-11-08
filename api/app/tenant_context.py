@@ -38,11 +38,37 @@ class TenantContextSession(Session):
             raise TypeError("TenantContext required")
         self.info["tenant_context"] = context
 
+    def begin_identity_resolution(self, verified_subject: UUID):
+        """Bootstrap only from a cryptographically verified token subject."""
+        if self.in_transaction() or self.info.get("tenant_context") or self.info.get("verified_subject"):
+            raise RuntimeError("Identity resolution requires a fresh Session")
+        if not isinstance(verified_subject, UUID):
+            raise ValueError("Verified Auth UUID required")
+        self.info["verified_subject"] = verified_subject
+
+    def complete_identity_resolution(self, context: TenantContext):
+        """Promote only a profile resolved for this Session's verified subject."""
+        if not isinstance(context, TenantContext):
+            raise TypeError("TenantContext required")
+        if (not self.in_transaction() or self.info.get("tenant_context")
+                or self.info.get("verified_subject") != context.auth_user_id):
+            raise RuntimeError("Resolved context must match the bootstrapped identity")
+        self.info["tenant_context"] = context
+        _apply_context(self, None, self.connection())
+
+    def reject_identity_resolution(self):
+        try:
+            self.rollback()
+        finally:
+            self.info.pop("tenant_context", None)
+            self.info.pop("verified_subject", None)
+
     def close(self):
         try:
             super().close()
         finally:
             self.info.pop("tenant_context", None)
+            self.info.pop("verified_subject", None)
 
 
 @event.listens_for(TenantContextSession, "after_begin")
@@ -50,11 +76,12 @@ def _apply_context(session, transaction, connection):
     if connection.dialect.name != "postgresql":
         raise RuntimeError("Tenant context requires PostgreSQL")
     context = session.info.get("tenant_context")
+    subject = context.auth_user_id if context else session.info.get("verified_subject")
     # Always overwrite every supported key, including for anonymous requests.
     # Empty values intentionally make policies using NULLIF(..., '') deny rows.
     values = {
-        "request.jwt.claim.sub": str(context.auth_user_id) if context else "",
-        "app.auth_user_id": str(context.auth_user_id) if context else "",
+        "request.jwt.claim.sub": str(subject) if subject else "",
+        "app.auth_user_id": str(subject) if subject else "",
         "app.local_user_id": str(context.local_user_id) if context else "",
         "app.school_id": str(context.school_id) if context and context.school_id is not None else "",
         "app.role": context.role if context else "",
