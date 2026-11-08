@@ -53,27 +53,68 @@ def run():
                       VALUES (1, 1, 1, 2, 10);""")
 
         migration = MIGRATION.read_text(encoding="utf-8")
-        try:
-            db.execute(migration)
-        except psycopg.errors.RaiseException as exc:
-            assert "Cross-school or cross-student" in str(exc), str(exc)
-            db.rollback()
-        else:
-            raise AssertionError("Migration incorrectly accepted a cross-student allocation")
-
-        count = db.execute(
-            "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_payment_reference_per_school'"
-        ).fetchone()[0]
-        assert count == 0, "Failed preflight left partially applied constraints"
-
-        db.execute("DELETE FROM payment_allocations WHERE id = 1")
-        db.execute(migration)
-
         expected = (
             "uq_invoice_student_term_per_school", "uq_payment_reference_per_school",
             "uq_payment_allocation_per_invoice", "fk_payment_allocation_payment_school",
-            "fk_payment_allocation_invoice_school",
+            "fk_payment_allocation_invoice_school", "uq_invoice_school_id_id",
+            "uq_payment_school_id_id",
         )
+
+        def financial_snapshot():
+            # Compare every column, not just row counts: failed DDL must not
+            # silently repair, delete or rewrite the conflicting evidence.
+            return tuple(db.execute(f"SELECT * FROM public.{table} ORDER BY id").fetchall()
+                for table in ('invoices', 'payments', 'payment_allocations'))
+
+        def expect_preflight_failure(message):
+            before = financial_snapshot()
+            try:
+                db.execute(migration)
+            except psycopg.errors.RaiseException as exc:
+                assert message in str(exc), str(exc)
+                db.rollback()
+            else:
+                raise AssertionError(f"Migration incorrectly accepted: {message}")
+            assert financial_snapshot() == before, "Failed migration altered financial evidence"
+            names = db.execute(
+                "SELECT conname FROM pg_constraint WHERE conname = ANY(%s)", (list(expected),)
+            ).fetchall()
+            assert not names, f"Failed preflight left partially applied constraints: {names}"
+
+        expect_preflight_failure("Cross-school or cross-student")
+        db.execute("DELETE FROM payment_allocations WHERE id = 1")
+        # Each case has its own valid IDs, so the intended preflight rather
+        # than an unrelated primary-key violation is what must reject it.
+        cases = (
+            ("Duplicate learner/term invoices", "invoices",
+             "INSERT INTO invoices (id,school_id,student_id,term_id,invoice_number) VALUES (99,1,1,1,'DUP-TERM')"),
+            ("Duplicate payment references", "payments",
+             "INSERT INTO payments (id,school_id,student_id,amount,reference) VALUES (99,1,1,5,'PAY-1')"),
+            ("Duplicate payment/invoice allocation pairs", "payment_allocations",
+             "INSERT INTO payment_allocations (id,school_id,payment_id,invoice_id,amount) VALUES (98,1,1,1,5),(99,1,1,1,5)"),
+            ("Cross-school or cross-student", "payment_allocations",
+             "INSERT INTO payment_allocations (id,school_id,payment_id,invoice_id,amount) VALUES (99,2,1,3,5)"),
+            ("Cross-school or cross-student", "payment_allocations",
+             "INSERT INTO payment_allocations (id,school_id,payment_id,invoice_id,amount) VALUES (99,1,1,3,5)"),
+        )
+        for message, table, setup in cases:
+            db.execute(setup)
+            expect_preflight_failure(message)
+            db.execute(f"DELETE FROM public.{table} WHERE id IN (98,99)")
+
+        before = financial_snapshot()
+        db.execute(migration)
+        assert financial_snapshot() == before, "Successful migration rewrote financial data"
+        # The proposal deliberately fails closed on repeat application; verify
+        # that this preserves all existing constraints and financial records.
+        try:
+            db.execute(migration)
+        except psycopg.errors.RaiseException as exc:
+            assert "already exists; inspect it" in str(exc), str(exc)
+            db.rollback()
+        else:
+            raise AssertionError("Repeated proposal should require inspection")
+        assert financial_snapshot() == before
         names = {row[0] for row in db.execute(
             "SELECT conname FROM pg_constraint WHERE conname = ANY(%s)", (list(expected),)
         )}

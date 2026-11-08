@@ -107,3 +107,9 @@ The former repository migration drafts have been copied to `supabase/proposed_mi
 ## Financial uniqueness proposal — 5 November 2026
 
 Additional read-only checks found zero duplicate non-NULL payment references and zero duplicate `(payment_id, invoice_id)` allocation pairs. The repository models now declare matching uniqueness constraints. A staging-only SQL proposal is stored at `supabase/proposed_migrations/20261105_add_financial_uniqueness_backstops.sql`; it aborts on pre-existing duplicates or constraints and then adds school-scoped payment reference uniqueness and per-payment/per-invoice allocation uniqueness. It has not been applied. Review table locks and staging behaviour before any production rollout.
+
+### Isolated migration failure checks — 8 November 2026
+
+`scripts/rehearse_financial_migration.py` exercises six independent dirty-data cases: cross-student allocation, duplicate learner/term invoice, duplicate payment reference, duplicate allocation pair, cross-school payment link and cross-school invoice link. Each must raise the intended preflight error, preserve every column of the invoice/payment/allocation rows, and leave none of the proposal's seven constraints behind. The successful application must also preserve those rows. Repeat application must fail closed while retaining the data and all seven constraints.
+
+These are synthetic loopback PostgreSQL checks run in CI, not evidence that a hosted Supabase staging clone matches production. The proposal and canonical migration chain remain unchanged. Hosted staging with real Auth, restricted-role coverage, concurrency/lock behavior, backups and release approval remain gates. The allocation preflight detects existing cross-student links; the proposed composite foreign keys alone do not enforce learner equality on future writes.
