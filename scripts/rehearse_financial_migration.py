@@ -82,18 +82,27 @@ def run():
         # Seed a valid allocation, then verify the uniqueness backstop rejects a repeat.
         db.execute("INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (10, 1, 1, 1, 5)")
         rejected = (
-            ("duplicate payment allocation", "INSERT INTO payment_allocations (school_id, payment_id, invoice_id, amount) VALUES (1, 1, 1, 5)"),
-            ("duplicate payment reference", "INSERT INTO payments (school_id, student_id, amount, reference) VALUES (1, 1, 5, 'PAY-1')"),
-            ("duplicate learner term invoice", "INSERT INTO invoices (school_id, student_id, term_id, invoice_number) VALUES (1, 1, 1, 'INV-NEW')"),
-            ("cross-school allocation", "INSERT INTO payment_allocations (school_id, payment_id, invoice_id, amount) VALUES (2, 1, 3, 5)"),
+            ("duplicate payment allocation", "uq_payment_allocation_per_invoice", "INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (11, 1, 1, 1, 5)"),
+            ("duplicate payment reference", "uq_payment_reference_per_school", "INSERT INTO payments (id, school_id, student_id, amount, reference) VALUES (11, 1, 1, 5, 'PAY-1')"),
+            ("duplicate learner term invoice", "uq_invoice_student_term_per_school", "INSERT INTO invoices (id, school_id, student_id, term_id, invoice_number) VALUES (11, 1, 1, 1, 'INV-NEW')"),
+            ("cross-school payment", "fk_payment_allocation_payment_school", "INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (12, 2, 1, 3, 5)"),
+            ("cross-school invoice", "fk_payment_allocation_invoice_school", "INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (13, 1, 1, 3, 5)"),
         )
-        for label, sql in rejected:
+        for label, constraint, sql in rejected:
             try:
                 db.execute(sql)
-            except psycopg.errors.IntegrityError:
+            except psycopg.errors.IntegrityError as exc:
                 db.rollback()
+                assert exc.diag.constraint_name == constraint, (
+                    f"{label}: expected {constraint}, got {exc.diag.constraint_name}"
+                )
             else:
                 raise AssertionError(f"Database unexpectedly allowed {label}")
+
+        # References are school-scoped, and NULL references remain repeatable.
+        db.execute("""INSERT INTO payments (id, school_id, student_id, amount, reference)
+                      VALUES (20, 2, 3, 5, 'PAY-1'), (21, 1, 1, 5, NULL),
+                             (22, 1, 1, 5, NULL)""")
 
     print("PASS: isolated PostgreSQL financial-migration rehearsal and negative checks")
 
