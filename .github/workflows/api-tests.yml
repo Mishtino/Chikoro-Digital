@@ -67,6 +67,13 @@ jobs:
           DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
           CHIKORO_REHEARSAL_EMPTY_DATABASE: "yes"
         run: python scripts/rehearse_financial_migration.py
+      - name: Rehearse school finance read API under isolated PostgreSQL RLS
+        env:
+          ENV: test
+          DEBUG: "false"
+          DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
+          CHIKORO_REHEARSAL_FINANCE_API: "yes"
+        run: python scripts/rehearse_finance_api_rls.py
       - name: Rehearse tenant context and RLS against isolated PostgreSQL 17
         env:
           DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
