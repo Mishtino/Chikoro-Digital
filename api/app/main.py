@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications, platform_audit, platform_access, platform_staff, school_staff, school_admin, attendance, timetable, classes, parent_teacher, homework
+from app.routers import auth, schools, users, students, fees, payments, portal, paynow, results, notifications, platform_audit, platform_access, platform_staff, school_staff, school_admin, attendance, timetable, classes, parent_teacher, homework, classrooms
 
 logger = logging.getLogger("chikoro.security")
 
@@ -83,3 +83,4 @@ app.include_router(timetable.router)
 app.include_router(classes.router)
 app.include_router(parent_teacher.router)
 app.include_router(homework.router)
+app.include_router(classrooms.router)
