@@ -249,9 +249,7 @@ def run():
              "UPDATE payment_allocations SET invoice_id = 3 WHERE id = 10"),
         )
         for label, constraint, sql in update_rejections:
-            original = db.execute(
-                "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
-            ).fetchone()
+            before_update = financial_snapshot()
             try:
                 db.execute(sql)
             except psycopg.errors.IntegrityError as exc:
@@ -261,9 +259,9 @@ def run():
                 )
             else:
                 raise AssertionError(f"Database unexpectedly allowed {label}")
-            assert db.execute(
-                "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
-            ).fetchone() == original, f"{label}: rejected UPDATE changed allocation"
+            assert financial_snapshot() == before_update, (
+                f"{label}: rejected UPDATE changed financial records"
+            )
 
         # Uniqueness must hold for UPDATE as well as INSERT. Keep the
         # original rows unchanged after each rejected mutation.
@@ -283,9 +281,7 @@ def run():
                 db.execute("INSERT INTO payments (id, school_id, student_id, amount, reference) VALUES (30, 1, 1, 5, 'PAY-30')")
                 changed_id = 30
                 statement = "UPDATE payments SET reference = 'PAY-1' WHERE id = 30"
-            before_row = db.execute(
-                f"SELECT * FROM public.{table} WHERE id = %s", (changed_id,)
-            ).fetchone()
+            before_update = financial_snapshot()
             try:
                 db.execute(statement)
             except psycopg.errors.UniqueViolation as exc:
@@ -295,9 +291,9 @@ def run():
                 )
             else:
                 raise AssertionError(f"Database unexpectedly allowed {label}")
-            assert db.execute(
-                f"SELECT * FROM public.{table} WHERE id = %s", (changed_id,)
-            ).fetchone() == before_row, f"{label}: rejected UPDATE changed data"
+            assert financial_snapshot() == before_update, (
+                f"{label}: rejected UPDATE changed financial records"
+            )
 
         # Remove the temporary same-school duplicate-reference fixture before
         # the next finance API/RLS rehearsal, which expects only the baseline
