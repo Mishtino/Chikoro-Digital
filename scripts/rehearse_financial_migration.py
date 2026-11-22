@@ -221,6 +221,10 @@ def run():
             ("cross-school invoice", "fk_payment_allocation_invoice_school", "INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (13, 1, 1, 3, 5)"),
         )
         for label, constraint, sql in rejected:
+            # A rejected mutation must not leave any financial row behind.
+            # Check all three tables so a trigger or future SQL change cannot
+            # silently alter another tenant's financial evidence.
+            before_rejection = financial_snapshot()
             try:
                 db.execute(sql)
             except psycopg.errors.IntegrityError as exc:
@@ -230,6 +234,9 @@ def run():
                 )
             else:
                 raise AssertionError(f"Database unexpectedly allowed {label}")
+            assert financial_snapshot() == before_rejection, (
+                f"{label}: rejected INSERT changed financial records"
+            )
 
         # Foreign keys must also reject UPDATE-based tenant reassignment, not
         # only invalid new allocations. Preserve the original valid row.
