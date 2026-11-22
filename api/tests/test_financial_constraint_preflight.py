@@ -43,3 +43,12 @@ def test_financial_proposal_stays_transactional_and_quarantined():
     assert not (
         MIGRATION.parents[1] / "migrations" / MIGRATION.name
     ).exists(), "Proposed financial migration must not enter canonical chain"
+
+
+def test_cross_tenant_allocation_check_precedes_first_financial_ddl():
+    """Invalid allocation evidence must fail before any ALTER TABLE/index lock."""
+    sql = MIGRATION.read_text(encoding="utf-8")
+    first_ddl = sql.index("ALTER TABLE public.invoices")
+    tenant_check = sql.index("Cross-school or cross-student payment allocations exist")
+    assert tenant_check < first_ddl, "Tenant allocation preflight must precede DDL"
+    assert sql.count("Cross-school or cross-student payment allocations exist") == 1
