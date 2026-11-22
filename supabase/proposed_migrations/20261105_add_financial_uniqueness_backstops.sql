@@ -99,7 +99,7 @@ END
 $;
 
 -- Reject tenant/student mismatches before acquiring ALTER TABLE locks or creating indexes.
-DO $
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
@@ -113,7 +113,7 @@ BEGIN
         RAISE EXCEPTION 'Cross-school or cross-student payment allocations exist; resolve before adding tenant foreign keys';
     END IF;
 END
-$;
+$$;
 
 ALTER TABLE public.invoices
     ADD CONSTRAINT uq_invoice_student_term_per_school
