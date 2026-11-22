@@ -52,3 +52,16 @@ def test_cross_tenant_allocation_check_precedes_first_financial_ddl():
     tenant_check = sql.index("Cross-school or cross-student payment allocations exist")
     assert tenant_check < first_ddl, "Tenant allocation preflight must precede DDL"
     assert sql.count("Cross-school or cross-student payment allocations exist") == 1
+
+
+def test_financial_preflight_blocks_use_balanced_dollar_quoting():
+    """A malformed DO delimiter prevents the entire PostgreSQL rehearsal."""
+    import re
+
+    sql = MIGRATION.read_text(encoding="utf-8")
+    openers = re.findall(r"(?m)^DO \$\$\s*$", sql)
+    closers = re.findall(r"(?m)^\$\$;\s*$", sql)
+    assert len(openers) == len(closers) == 2, (
+        "Both financial preflight DO blocks must use balanced $$ delimiters"
+    )
+    assert not re.search(r"(?m)^DO \$\s*$|^\$;\s*$", sql)
