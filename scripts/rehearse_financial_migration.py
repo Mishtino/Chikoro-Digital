@@ -102,6 +102,32 @@ def run():
             expect_preflight_failure(message)
             db.execute(f"DELETE FROM public.{table} WHERE id IN (98,99)")
 
+        # A pre-existing constraint with the expected name but the WRONG
+        # definition must fail closed before any financial DDL. This catches
+        # deployments with drifted or partially hand-applied constraints.
+        for table, name in (
+            ("invoices", "uq_invoice_school_id_id"),
+            ("payment_allocations", "fk_payment_allocation_invoice_school"),
+        ):
+            db.execute(
+                f"ALTER TABLE public.{table} ADD CONSTRAINT {name} CHECK (id > 0)"
+            )
+            collision_snapshot = financial_snapshot()
+            try:
+                db.execute(migration)
+            except psycopg.errors.RaiseException as exc:
+                assert "Financial tenant constraints already exist" in str(exc), str(exc)
+                db.rollback()
+            else:
+                raise AssertionError(f"Migration accepted a conflicting constraint: {name}")
+            assert financial_snapshot() == collision_snapshot, (
+                f"Collision preflight modified financial data: {name}"
+            )
+            assert db.execute(
+                "SELECT count(*) FROM pg_constraint WHERE conname = %s", (name,)
+            ).fetchone()[0] == 1, f"Collision preflight removed existing constraint: {name}"
+            db.execute(f"ALTER TABLE public.{table} DROP CONSTRAINT {name}")
+
         before = financial_snapshot()
         db.execute(migration)
         assert financial_snapshot() == before, "Successful migration rewrote financial data"
