@@ -105,8 +105,16 @@ def run():
         # A pre-existing constraint with the expected name but the WRONG
         # definition must fail closed before any financial DDL. This catches
         # deployments with drifted or partially hand-applied constraints.
+        # Exercise every proposed constraint name, including the composite
+        # tenant keys and both allocation FKs. A name collision must never
+        # silently accept a drifted constraint definition.
         for table, name in (
+            ("invoices", "uq_invoice_student_term_per_school"),
+            ("payments", "uq_payment_reference_per_school"),
+            ("payment_allocations", "uq_payment_allocation_per_invoice"),
             ("invoices", "uq_invoice_school_id_id"),
+            ("payments", "uq_payment_school_id_id"),
+            ("payment_allocations", "fk_payment_allocation_payment_school"),
             ("payment_allocations", "fk_payment_allocation_invoice_school"),
         ):
             db.execute(
