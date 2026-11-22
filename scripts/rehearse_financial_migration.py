@@ -231,6 +231,31 @@ def run():
             else:
                 raise AssertionError(f"Database unexpectedly allowed {label}")
 
+        # Foreign keys must also reject UPDATE-based tenant reassignment, not
+        # only invalid new allocations. Preserve the original valid row.
+        update_rejections = (
+            ("payment moved across schools", "fk_payment_allocation_payment_school",
+             "UPDATE payment_allocations SET school_id = 2 WHERE id = 10"),
+            ("invoice moved across schools", "fk_payment_allocation_invoice_school",
+             "UPDATE payment_allocations SET invoice_id = 3 WHERE id = 10"),
+        )
+        for label, constraint, sql in update_rejections:
+            original = db.execute(
+                "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+            ).fetchone()
+            try:
+                db.execute(sql)
+            except psycopg.errors.IntegrityError as exc:
+                db.rollback()
+                assert exc.diag.constraint_name == constraint, (
+                    f"{label}: expected {constraint}, got {exc.diag.constraint_name}"
+                )
+            else:
+                raise AssertionError(f"Database unexpectedly allowed {label}")
+            assert db.execute(
+                "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+            ).fetchone() == original, f"{label}: rejected UPDATE changed allocation"
+
         # References are school-scoped, and NULL references remain repeatable.
         db.execute("""INSERT INTO payments (id, school_id, student_id, amount, reference)
                       VALUES (20, 2, 3, 5, 'PAY-1'), (21, 1, 1, 5, NULL),
