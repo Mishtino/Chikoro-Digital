@@ -179,6 +179,37 @@ def run():
             )
             assert validated, f"{name}: constraint is NOT VALID"
 
+        # Verify exact tenant-key column order and referenced table/columns.
+        # A validated FK with the right name and type can still point at the
+        # wrong key, silently allowing cross-school financial associations.
+        expected_definitions = {
+            "uq_invoice_student_term_per_school": ("invoices", ("school_id", "student_id", "term_id"), None, ()),
+            "uq_payment_reference_per_school": ("payments", ("school_id", "reference"), None, ()),
+            "uq_payment_allocation_per_invoice": ("payment_allocations", ("payment_id", "invoice_id"), None, ()),
+            "uq_invoice_school_id_id": ("invoices", ("school_id", "id"), None, ()),
+            "uq_payment_school_id_id": ("payments", ("school_id", "id"), None, ()),
+            "fk_payment_allocation_payment_school": ("payment_allocations", ("school_id", "payment_id"), "payments", ("school_id", "id")),
+            "fk_payment_allocation_invoice_school": ("payment_allocations", ("school_id", "invoice_id"), "invoices", ("school_id", "id")),
+        }
+        definitions = db.execute("""
+            SELECT c.conname, c.conrelid::regclass::text,
+                   ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, pos)
+                         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+                         ORDER BY k.pos),
+                   CASE WHEN c.contype = 'f' THEN c.confrelid::regclass::text ELSE NULL END,
+                   ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum, pos)
+                         JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.attnum
+                         ORDER BY k.pos)
+            FROM pg_constraint c WHERE c.conname = ANY(%s)
+        """, (list(expected),)).fetchall()
+        for name, table, columns, referenced_table, referenced_columns in definitions:
+            actual = (table.removeprefix("public."), tuple(columns),
+                      referenced_table.removeprefix("public.") if referenced_table else None,
+                      tuple(referenced_columns))
+            assert actual == expected_definitions[name], (
+                f"{name}: unexpected tenant constraint definition: {actual}"
+            )
+
 
         # Seed a valid allocation, then verify the uniqueness backstop rejects a repeat.
         db.execute("INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (10, 1, 1, 1, 5)")
