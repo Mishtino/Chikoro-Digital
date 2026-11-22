@@ -47,6 +47,23 @@ BEGIN
             'uq_payment_allocation_per_invoice already exists; inspect it before applying this proposal';
     END IF;
 
+    -- Fail before DDL if any of the supporting composite keys or tenant
+    -- foreign keys already exist, not just the three uniqueness backstops.
+    -- An existing name may refer to a different definition and requires review.
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE (conrelid = 'public.invoices'::regclass
+               AND conname = 'uq_invoice_school_id_id')
+           OR (conrelid = 'public.payments'::regclass
+               AND conname = 'uq_payment_school_id_id')
+           OR (conrelid = 'public.payment_allocations'::regclass
+               AND conname IN ('fk_payment_allocation_payment_school',
+                               'fk_payment_allocation_invoice_school'))
+    ) THEN
+        RAISE EXCEPTION
+            'Financial tenant constraints already exist; inspect them before applying this proposal';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM public.invoices
