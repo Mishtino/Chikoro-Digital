@@ -96,7 +96,24 @@ BEGIN
             'Duplicate payment/invoice allocation pairs exist; resolve before applying this proposal';
     END IF;
 END
-$$;
+$;
+
+-- Reject tenant/student mismatches before acquiring ALTER TABLE locks or creating indexes.
+DO $
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM public.payment_allocations pa
+        JOIN public.payments p ON p.id = pa.payment_id
+        JOIN public.invoices i ON i.id = pa.invoice_id
+        WHERE pa.school_id <> p.school_id
+           OR pa.school_id <> i.school_id
+           OR p.student_id <> i.student_id
+    ) THEN
+        RAISE EXCEPTION 'Cross-school or cross-student payment allocations exist; resolve before adding tenant foreign keys';
+    END IF;
+END
+$;
 
 ALTER TABLE public.invoices
     ADD CONSTRAINT uq_invoice_student_term_per_school
@@ -116,21 +133,6 @@ ALTER TABLE public.payment_allocations
     ADD CONSTRAINT uq_payment_allocation_per_invoice
     UNIQUE (payment_id, invoice_id);
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM public.payment_allocations pa
-        JOIN public.payments p ON p.id = pa.payment_id
-        JOIN public.invoices i ON i.id = pa.invoice_id
-        WHERE pa.school_id <> p.school_id
-           OR pa.school_id <> i.school_id
-           OR p.student_id <> i.student_id
-    ) THEN
-        RAISE EXCEPTION 'Cross-school or cross-student payment allocations exist; resolve before adding tenant foreign keys';
-    END IF;
-END
-$$;
 
 ALTER TABLE public.payment_allocations
     ADD CONSTRAINT fk_payment_allocation_payment_school
