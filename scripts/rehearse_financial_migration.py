@@ -159,6 +159,27 @@ def run():
         )}
         assert names == set(expected), f"Missing constraints: {set(expected) - names}"
 
+        # Constraint names alone are insufficient: verify the migration created
+        # validated UNIQUE and FOREIGN KEY constraints, not drifted CHECKs.
+        constraint_rows = db.execute("""
+            SELECT conname, contype, convalidated
+            FROM pg_constraint
+            WHERE conname = ANY(%s)
+        """, (list(expected),)).fetchall()
+        expected_types = {
+            name: ("f" if name.startswith("fk_") else "u")
+            for name in expected
+        }
+        assert len(constraint_rows) == len(expected), (
+            f"Expected one definition per financial constraint: {constraint_rows}"
+        )
+        for name, kind, validated in constraint_rows:
+            assert kind == expected_types[name], (
+                f"{name}: expected constraint type {expected_types[name]}, got {kind}"
+            )
+            assert validated, f"{name}: constraint is NOT VALID"
+
+
         # Seed a valid allocation, then verify the uniqueness backstop rejects a repeat.
         db.execute("INSERT INTO payment_allocations (id, school_id, payment_id, invoice_id, amount) VALUES (10, 1, 1, 1, 5)")
         rejected = (
