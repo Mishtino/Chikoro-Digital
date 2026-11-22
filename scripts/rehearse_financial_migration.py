@@ -292,6 +292,12 @@ def run():
                 f"SELECT * FROM public.{table} WHERE id = %s", (changed_id,)
             ).fetchone() == before_row, f"{label}: rejected UPDATE changed data"
 
+        # Remove the temporary same-school duplicate-reference fixture before
+        # the next finance API/RLS rehearsal, which expects only the baseline
+        # payments plus the explicitly tested nullable-reference fixtures.
+        db.execute("DELETE FROM payments WHERE id = 30")
+        assert db.execute("SELECT count(*) FROM payments WHERE id = 30").fetchone()[0] == 0
+
         # References are school-scoped, and NULL references remain repeatable.
         db.execute("""INSERT INTO payments (id, school_id, student_id, amount, reference)
                       VALUES (20, 2, 3, 5, 'PAY-1'), (21, 1, 1, 5, NULL),
