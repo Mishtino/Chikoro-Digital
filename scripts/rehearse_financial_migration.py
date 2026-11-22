@@ -258,6 +258,40 @@ def run():
                 "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
             ).fetchone() == original, f"{label}: rejected UPDATE changed allocation"
 
+        # Uniqueness must hold for UPDATE as well as INSERT. Keep the
+        # original rows unchanged after each rejected mutation.
+        unique_updates = (
+            ("payment reference changed to duplicate", "uq_payment_reference_per_school",
+             "payments", 1, 2,
+             "UPDATE payments SET reference = 'PAY-1' WHERE id = 2"),
+            ("invoice learner/term changed to duplicate", "uq_invoice_student_term_per_school",
+             "invoices", 1, 2,
+             "UPDATE invoices SET student_id = 1 WHERE id = 2"),
+        )
+        for label, constraint, table, original_id, changed_id, statement in unique_updates:
+            # The payment case uses a school-2 row; moving it into school 1
+            # would involve unrelated student/FK rules. Instead create a
+            # same-school payment with a distinct reference.
+            if table == "payments":
+                db.execute("INSERT INTO payments (id, school_id, student_id, amount, reference) VALUES (30, 1, 1, 5, 'PAY-30')")
+                changed_id = 30
+                statement = "UPDATE payments SET reference = 'PAY-1' WHERE id = 30"
+            before_row = db.execute(
+                f"SELECT * FROM public.{table} WHERE id = %s", (changed_id,)
+            ).fetchone()
+            try:
+                db.execute(statement)
+            except psycopg.errors.UniqueViolation as exc:
+                db.rollback()
+                assert exc.diag.constraint_name == constraint, (
+                    f"{label}: expected {constraint}, got {exc.diag.constraint_name}"
+                )
+            else:
+                raise AssertionError(f"Database unexpectedly allowed {label}")
+            assert db.execute(
+                f"SELECT * FROM public.{table} WHERE id = %s", (changed_id,)
+            ).fetchone() == before_row, f"{label}: rejected UPDATE changed data"
+
         # References are school-scoped, and NULL references remain repeatable.
         db.execute("""INSERT INTO payments (id, school_id, student_id, amount, reference)
                       VALUES (20, 2, 3, 5, 'PAY-1'), (21, 1, 1, 5, NULL),
