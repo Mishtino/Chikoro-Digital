@@ -96,7 +96,7 @@ BEGIN
             'Duplicate payment/invoice allocation pairs exist; resolve before applying this proposal';
     END IF;
 END
-$;
+$$;
 
 -- Reject tenant/student mismatches before acquiring ALTER TABLE locks or creating indexes.
 DO $$
