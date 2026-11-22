@@ -124,7 +124,12 @@ def run():
             try:
                 db.execute(migration)
             except psycopg.errors.RaiseException as exc:
-                assert "Financial tenant constraints already exist" in str(exc), str(exc)
+                expected_message = (
+                    f"{name} already exists; inspect it"
+                    if name in expected[:3]
+                    else "Financial tenant constraints already exist"
+                )
+                assert expected_message in str(exc), str(exc)
                 db.rollback()
             else:
                 raise AssertionError(f"Migration accepted a conflicting constraint: {name}")
