@@ -41,6 +41,29 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
                             rehearse_financial_migration.run()
                         connect.assert_not_called()
 
+    def test_rejects_nonempty_public_schema_before_loading_sql(self):
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.execute.return_value.fetchone.return_value = (1,)
+        connection = MagicMock()
+        connection.__enter__.return_value = db
+
+        with patch.dict("os.environ", {
+            "DATABASE_URL": LOCAL_URL,
+            "CHIKORO_REHEARSAL_EMPTY_DATABASE": "yes",
+        }, clear=True):
+            with patch.object(rehearse_financial_migration.psycopg, "connect", return_value=connection) as connect:
+                with patch.object(rehearse_financial_migration.SCHEMA, "read_text") as schema_read:
+                    with patch.object(rehearse_financial_migration.MIGRATION, "read_text") as migration_read:
+                        with self.assertRaisesRegex(RuntimeError, "public schema is not empty"):
+                            rehearse_financial_migration.run()
+                        schema_read.assert_not_called()
+                        migration_read.assert_not_called()
+                connect.assert_called_once_with(LOCAL_URL, autocommit=True)
+                db.execute.assert_called_once()
+                assert "pg_class" in db.execute.call_args.args[0]
+
 
 if __name__ == "__main__":
     unittest.main()
