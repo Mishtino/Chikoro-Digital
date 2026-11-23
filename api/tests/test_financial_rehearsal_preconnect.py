@@ -104,7 +104,7 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
                     sql_read.assert_not_called()
         self.assertEqual(db.execute.call_count, 3)
         self.assertIn("pg_type", db.execute.call_args_list[2].args[0])
-        self.assertIn("'e', 'd'", db.execute.call_args_list[2].args[0])
+        self.assertIn("'e', 'd', 'r', 'm'", db.execute.call_args_list[2].args[0])
 
     def test_rejects_public_extensions_before_loading_sql(self):
         from unittest.mock import MagicMock

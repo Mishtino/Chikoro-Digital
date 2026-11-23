@@ -43,12 +43,12 @@ def run():
         if public_functions:
             raise RuntimeError("Refusing rehearsal: public schema contains functions")
 
-        # Standalone enum, domain and composite types also make a schema nonempty.
+        # Standalone enum, domain, range, multirange and composite types also make a schema nonempty.
         # Ignore automatically generated table row types (tables were checked above).
         public_types = db.execute("""SELECT count(*) FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
             WHERE n.nspname = 'public'
-              AND (t.typtype IN ('e', 'd') OR
+              AND (t.typtype IN ('e', 'd', 'r', 'm') OR
                    (t.typtype = 'c' AND NOT EXISTS (
                        SELECT 1 FROM pg_class c WHERE c.oid = t.typrelid
                    )))""").fetchone()[0]
