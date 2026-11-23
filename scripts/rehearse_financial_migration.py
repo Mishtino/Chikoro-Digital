@@ -55,6 +55,14 @@ def run():
         if public_types:
             raise RuntimeError("Refusing rehearsal: public schema contains standalone types")
 
+        # An extension installed into public is not a disposable empty schema,
+        # even when it creates no relations or functions of its own.
+        public_extensions = db.execute("""SELECT count(*) FROM pg_extension e
+            JOIN pg_namespace n ON n.oid = e.extnamespace
+            WHERE n.nspname = 'public'""").fetchone()[0]
+        if public_extensions:
+            raise RuntimeError("Refusing rehearsal: public schema contains extensions")
+
         db.execute(SCHEMA.read_text(encoding="utf-8"))
         db.execute("""INSERT INTO schools (id, code, name) VALUES
                       (1, 'S1', 'School One'), (2, 'S2', 'School Two');
