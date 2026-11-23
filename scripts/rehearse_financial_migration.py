@@ -72,6 +72,15 @@ def run():
         if public_collations:
             raise RuntimeError("Refusing rehearsal: public schema contains collations")
 
+        # A database with a custom schema is not empty, even if public is empty.
+        # PostgreSQL's internal schemas are excluded explicitly.
+        custom_schemas = db.execute("""SELECT count(*) FROM pg_namespace
+            WHERE nspname NOT IN ('public', 'pg_catalog', 'information_schema')
+              AND nspname NOT LIKE 'pg_toast%'
+              AND nspname NOT LIKE 'pg_temp%'""").fetchone()[0]
+        if custom_schemas:
+            raise RuntimeError("Refusing rehearsal: database contains custom schemas")
+
         db.execute(SCHEMA.read_text(encoding="utf-8"))
         db.execute("""INSERT INTO schools (id, code, name) VALUES
                       (1, 'S1', 'School One'), (2, 'S2', 'School Two');
