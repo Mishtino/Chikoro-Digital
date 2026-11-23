@@ -247,6 +247,10 @@ def run():
              "UPDATE payment_allocations SET school_id = 2 WHERE id = 10"),
             ("invoice moved across schools", "fk_payment_allocation_invoice_school",
              "UPDATE payment_allocations SET invoice_id = 3 WHERE id = 10"),
+            ("payment reassigned to missing parent", "fk_payment_allocation_payment_school",
+             "UPDATE payment_allocations SET payment_id = 99999 WHERE id = 10"),
+            ("invoice reassigned to missing parent", "fk_payment_allocation_invoice_school",
+             "UPDATE payment_allocations SET invoice_id = 99999 WHERE id = 10"),
         )
         for label, constraint, sql in update_rejections:
             before_update = financial_snapshot()
