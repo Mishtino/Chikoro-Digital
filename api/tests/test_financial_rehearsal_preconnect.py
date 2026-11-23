@@ -54,8 +54,8 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
             "CHIKORO_REHEARSAL_EMPTY_DATABASE": "yes",
         }, clear=True):
             with patch.object(rehearse_financial_migration.psycopg, "connect", return_value=connection) as connect:
-                with patch.object(rehearse_financial_migration.SCHEMA, "read_text") as schema_read:
-                    with patch.object(rehearse_financial_migration.MIGRATION, "read_text") as migration_read:
+                with patch.object(type(rehearse_financial_migration.SCHEMA), "read_text") as schema_read:
+                    with patch.object(type(rehearse_financial_migration.MIGRATION), "read_text") as migration_read:
                         with self.assertRaisesRegex(RuntimeError, "public schema is not empty"):
                             rehearse_financial_migration.run()
                         schema_read.assert_not_called()
