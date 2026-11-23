@@ -54,15 +54,14 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
             "CHIKORO_REHEARSAL_EMPTY_DATABASE": "yes",
         }, clear=True):
             with patch.object(rehearse_financial_migration.psycopg, "connect", return_value=connection) as connect:
-                with patch.object(rehearse_financial_migration.SCHEMA, "read_text") as schema_read:
-                    with patch.object(rehearse_financial_migration.MIGRATION, "read_text") as migration_read:
-                        with self.assertRaisesRegex(RuntimeError, "public schema is not empty"):
-                            rehearse_financial_migration.run()
-                        schema_read.assert_not_called()
-                        migration_read.assert_not_called()
+                with patch.object(type(rehearse_financial_migration.SCHEMA), "read_text") as sql_read:
+                    with self.assertRaisesRegex(RuntimeError, "public schema is not empty"):
+                        rehearse_financial_migration.run()
+                    sql_read.assert_not_called()
                 connect.assert_called_once_with(LOCAL_URL, autocommit=True)
                 db.execute.assert_called_once()
                 assert "pg_class" in db.execute.call_args.args[0]
+                self.assertIn("'S'", db.execute.call_args.args[0], "Sequences must block rehearsal")
 
 
 if __name__ == "__main__":

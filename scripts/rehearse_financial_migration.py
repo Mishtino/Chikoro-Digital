@@ -31,7 +31,7 @@ def run():
         non_system = db.execute(
             """SELECT count(*) FROM pg_class c
                JOIN pg_namespace n ON n.oid = c.relnamespace
-               WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')"""
+               WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')"""
         ).fetchone()[0]
         if non_system:
             raise RuntimeError("Refusing rehearsal: public schema is not empty")
