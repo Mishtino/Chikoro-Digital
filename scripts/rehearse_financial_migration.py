@@ -269,6 +269,29 @@ def run():
                 f"{label}: rejected UPDATE changed financial records"
             )
 
+        # Parent deletion must not orphan allocations, including when the
+        # existing single-column FK fires before the composite tenant FK.
+        parent_deletions = (
+            ("referenced payment", "DELETE FROM payments WHERE id = 1",
+             {"payment_allocations_payment_id_fkey", "fk_payment_allocation_payment_school"}),
+            ("referenced invoice", "DELETE FROM invoices WHERE id = 1",
+             {"payment_allocations_invoice_id_fkey", "fk_payment_allocation_invoice_school"}),
+        )
+        for label, statement, allowed_constraints in parent_deletions:
+            before_delete = financial_snapshot()
+            try:
+                db.execute(statement)
+            except psycopg.errors.ForeignKeyViolation as exc:
+                db.rollback()
+                assert exc.diag.constraint_name in allowed_constraints, (
+                    f"{label}: unexpected constraint {exc.diag.constraint_name}"
+                )
+            else:
+                raise AssertionError(f"Database unexpectedly deleted {label}")
+            assert financial_snapshot() == before_delete, (
+                f"{label}: rejected DELETE changed financial records"
+            )
+
         # Uniqueness must hold for UPDATE as well as INSERT. Keep the
         # original rows unchanged after each rejected mutation.
         unique_updates = (
