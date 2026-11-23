@@ -81,6 +81,14 @@ def run():
         if custom_schemas:
             raise RuntimeError("Refusing rehearsal: database contains custom schemas")
 
+        # Event triggers are database-wide and may execute during fixture DDL,
+        # even when all ordinary user schemas appear empty.
+        event_triggers = db.execute(
+            "SELECT count(*) FROM pg_event_trigger"
+        ).fetchone()[0]
+        if event_triggers:
+            raise RuntimeError("Refusing rehearsal: database contains event triggers")
+
         db.execute(SCHEMA.read_text(encoding="utf-8"))
         db.execute("""INSERT INTO schools (id, code, name) VALUES
                       (1, 'S1', 'School One'), (2, 'S2', 'School Two');

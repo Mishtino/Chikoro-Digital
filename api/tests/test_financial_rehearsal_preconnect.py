@@ -180,5 +180,26 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
         self.assertIn("pg_temp%", query)
 
 
+    def test_rejects_database_event_triggers_before_loading_sql(self):
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.execute.return_value.fetchone.side_effect = [(0,)] * 6 + [(1,)]
+        connection = MagicMock()
+        connection.__enter__.return_value = db
+
+        with patch.dict("os.environ", {
+            "DATABASE_URL": LOCAL_URL,
+            "CHIKORO_REHEARSAL_EMPTY_DATABASE": "yes",
+        }, clear=True):
+            with patch.object(rehearse_financial_migration.psycopg, "connect", return_value=connection):
+                with patch.object(type(rehearse_financial_migration.SCHEMA), "read_text") as sql_read:
+                    with self.assertRaisesRegex(RuntimeError, "database contains event triggers"):
+                        rehearse_financial_migration.run()
+                    sql_read.assert_not_called()
+        self.assertEqual(db.execute.call_count, 7)
+        self.assertIn("pg_event_trigger", db.execute.call_args_list[6].args[0])
+
+
 if __name__ == "__main__":
     unittest.main()
