@@ -36,6 +36,13 @@ def run():
         if non_system:
             raise RuntimeError("Refusing rehearsal: public schema is not empty")
 
+        # Functions are not pg_class relations; reject function-only schemas.
+        public_functions = db.execute("""SELECT count(*) FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'""").fetchone()[0]
+        if public_functions:
+            raise RuntimeError("Refusing rehearsal: public schema contains functions")
+
         db.execute(SCHEMA.read_text(encoding="utf-8"))
         db.execute("""INSERT INTO schools (id, code, name) VALUES
                       (1, 'S1', 'School One'), (2, 'S2', 'School Two');
