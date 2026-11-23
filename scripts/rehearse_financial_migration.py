@@ -269,6 +269,65 @@ def run():
                 f"{label}: rejected UPDATE changed financial records"
             )
 
+        # Parent deletion must not orphan allocations, including when the
+        # existing single-column FK fires before the composite tenant FK.
+        parent_deletions = (
+            ("referenced payment", "DELETE FROM payments WHERE id = 1",
+             {"payment_allocations_payment_id_fkey", "fk_payment_allocation_payment_school"}),
+            ("referenced invoice", "DELETE FROM invoices WHERE id = 1",
+             {"payment_allocations_invoice_id_fkey", "fk_payment_allocation_invoice_school"}),
+        )
+        for label, statement, allowed_constraints in parent_deletions:
+            before_delete = financial_snapshot()
+            try:
+                db.execute(statement)
+            except psycopg.errors.ForeignKeyViolation as exc:
+                db.rollback()
+                assert exc.diag.constraint_name in allowed_constraints, (
+                    f"{label}: unexpected constraint {exc.diag.constraint_name}"
+                )
+            else:
+                raise AssertionError(f"Database unexpectedly deleted {label}")
+            assert financial_snapshot() == before_delete, (
+                f"{label}: rejected DELETE changed financial records"
+            )
+
+        # A legitimate same-school reassignment must still work. The
+        # isolation constraints must not block valid financial corrections.
+        # Invoice 2 is unallocated after the preflight fixture is removed.
+        before_reassignment = financial_snapshot()
+        db.execute("UPDATE payment_allocations SET invoice_id = 2 WHERE id = 10")
+        reassigned = db.execute(
+            "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+        ).fetchone()
+        assert reassigned == (1, 1, 2), (
+            f"Valid same-school reassignment produced unexpected allocation: {reassigned}"
+        )
+        db.execute("UPDATE payment_allocations SET invoice_id = 1 WHERE id = 10")
+        assert financial_snapshot() == before_reassignment, (
+            "Restoring valid same-school reassignment altered financial records"
+        )
+
+        # Valid same-school payment corrections must also remain possible.
+        # Use a disposable payment so the later RLS fixture remains stable.
+        before_payment_reassignment = financial_snapshot()
+        db.execute(
+            "INSERT INTO payments (id, school_id, student_id, amount, reference) "
+            "VALUES (31, 1, 1, 5, 'PAY-31')"
+        )
+        db.execute("UPDATE payment_allocations SET payment_id = 31 WHERE id = 10")
+        corrected = db.execute(
+            "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+        ).fetchone()
+        assert corrected == (1, 31, 1), (
+            f"Valid same-school payment reassignment produced unexpected allocation: {corrected}"
+        )
+        db.execute("UPDATE payment_allocations SET payment_id = 1 WHERE id = 10")
+        db.execute("DELETE FROM payments WHERE id = 31")
+        assert financial_snapshot() == before_payment_reassignment, (
+            "Restoring valid same-school payment reassignment altered financial records"
+        )
+
         # Uniqueness must hold for UPDATE as well as INSERT. Keep the
         # original rows unchanged after each rejected mutation.
         unique_updates = (
