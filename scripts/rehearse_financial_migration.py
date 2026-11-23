@@ -308,6 +308,26 @@ def run():
             "Restoring valid same-school reassignment altered financial records"
         )
 
+        # Valid same-school payment corrections must also remain possible.
+        # Use a disposable payment so the later RLS fixture remains stable.
+        before_payment_reassignment = financial_snapshot()
+        db.execute(
+            "INSERT INTO payments (id, school_id, student_id, amount, reference) "
+            "VALUES (31, 1, 1, 5, 'PAY-31')"
+        )
+        db.execute("UPDATE payment_allocations SET payment_id = 31 WHERE id = 10")
+        corrected = db.execute(
+            "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+        ).fetchone()
+        assert corrected == (1, 31, 1), (
+            f"Valid same-school payment reassignment produced unexpected allocation: {corrected}"
+        )
+        db.execute("UPDATE payment_allocations SET payment_id = 1 WHERE id = 10")
+        db.execute("DELETE FROM payments WHERE id = 31")
+        assert financial_snapshot() == before_payment_reassignment, (
+            "Restoring valid same-school payment reassignment altered financial records"
+        )
+
         # Uniqueness must hold for UPDATE as well as INSERT. Keep the
         # original rows unchanged after each rejected mutation.
         unique_updates = (
