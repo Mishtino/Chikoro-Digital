@@ -292,6 +292,30 @@ def run():
                 f"{label}: rejected DELETE changed financial records"
             )
 
+        # Parent tenant keys must be immutable while referenced by allocations.
+        # The composite foreign keys must reject changing the school on a
+        # payment or invoice, even if the original parent ID remains valid.
+        parent_tenant_updates = (
+            ("referenced payment tenant", "fk_payment_allocation_payment_school",
+             "UPDATE payments SET school_id = 2 WHERE id = 1"),
+            ("referenced invoice tenant", "fk_payment_allocation_invoice_school",
+             "UPDATE invoices SET school_id = 2 WHERE id = 1"),
+        )
+        for label, constraint, statement in parent_tenant_updates:
+            before_update = financial_snapshot()
+            try:
+                db.execute(statement)
+            except psycopg.errors.ForeignKeyViolation as exc:
+                db.rollback()
+                assert exc.diag.constraint_name == constraint, (
+                    f"{label}: expected {constraint}, got {exc.diag.constraint_name}"
+                )
+            else:
+                raise AssertionError(f"Database unexpectedly allowed {label}")
+            assert financial_snapshot() == before_update, (
+                f"{label}: rejected parent tenant UPDATE changed financial records"
+            )
+
         # A legitimate same-school reassignment must still work. The
         # isolation constraints must not block valid financial corrections.
         # Invoice 2 is unallocated after the preflight fixture is removed.
