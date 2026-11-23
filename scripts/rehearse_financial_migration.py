@@ -308,6 +308,35 @@ def run():
             "Restoring valid same-school reassignment altered financial records"
         )
 
+        # A second valid allocation may not be updated into an existing
+        # payment/invoice pair. This tests the UPDATE path of the uniqueness
+        # backstop, and ensures a failed correction has no side effects.
+        before_duplicate_update = financial_snapshot()
+        db.execute(
+            "INSERT INTO payment_allocations "
+            "(id, school_id, payment_id, invoice_id, amount) "
+            "VALUES (32, 1, 1, 2, 5)"
+        )
+        before_rejection = financial_snapshot()
+        try:
+            db.execute(
+                "UPDATE payment_allocations SET invoice_id = 1 WHERE id = 32"
+            )
+        except psycopg.errors.UniqueViolation as exc:
+            db.rollback()
+            assert exc.diag.constraint_name == "uq_payment_allocation_per_invoice", (
+                f"Duplicate allocation UPDATE hit {exc.diag.constraint_name}"
+            )
+        else:
+            raise AssertionError("Duplicate allocation UPDATE unexpectedly succeeded")
+        assert financial_snapshot() == before_rejection, (
+            "Rejected duplicate allocation UPDATE changed financial records"
+        )
+        db.execute("DELETE FROM payment_allocations WHERE id = 32")
+        assert financial_snapshot() == before_duplicate_update, (
+            "Duplicate allocation UPDATE rehearsal left temporary financial records"
+        )
+
         # Valid same-school payment corrections must also remain possible.
         # Use a disposable payment so the later RLS fixture remains stable.
         before_payment_reassignment = financial_snapshot()
