@@ -67,6 +67,11 @@ jobs:
           DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
           CHIKORO_REHEARSAL_EMPTY_DATABASE: "yes"
         run: python scripts/rehearse_financial_migration.py
+      - name: Verify populated PostgreSQL rejects repeat financial rehearsal
+        env:
+          DATABASE_URL: postgresql://chikoro_local:local_only_change_me@127.0.0.1:55432/chikoro_local
+          CHIKORO_REHEARSAL_EMPTY_DATABASE: "yes"
+        run: python scripts/verify_populated_financial_rehearsal.py
       - name: Rehearse school finance read and write API under isolated PostgreSQL RLS
         env:
           ENV: test
