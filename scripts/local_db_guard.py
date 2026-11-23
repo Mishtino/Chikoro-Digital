@@ -24,6 +24,11 @@ def validate_database_url(database_url: str) -> tuple[bool, str]:
     if not database_url:
         return False, "DATABASE_URL is not set."
 
+    # urllib.parse strips ASCII tabs/newlines and some leading controls. Never
+    # validate a normalized URL that differs from the supplied connection URI.
+    if any(ord(char) < 33 or ord(char) == 127 for char in database_url):
+        return False, "DATABASE_URL contains whitespace or control characters."
+
     try:
         parsed = urlparse(database_url)
         port = parsed.port
