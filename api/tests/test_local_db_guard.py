@@ -71,6 +71,18 @@ class LocalDatabaseGuardTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertFalse(validate_database_url(url)[0])
 
+    def test_rejects_noncanonical_database_paths(self):
+        for path in (
+            "//chikoro_local",
+            "///chikoro_local",
+            "/%63hikoro_local",
+            "/chikoro%5Flocal",
+            "/chikoro_local%00",
+        ):
+            with self.subTest(path=path):
+                url = "postgresql://user:pass@127.0.0.1:55432" + path
+                self.assertFalse(validate_database_url(url)[0])
+
     def test_rejects_additional_libpq_connection_overrides(self):
         for query in (
             "host=remote.example.com",

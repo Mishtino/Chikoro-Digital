@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
@@ -30,7 +30,9 @@ def validate_database_url(database_url: str) -> tuple[bool, str]:
     except ValueError:
         return False, "DATABASE_URL is malformed."
 
-    database = unquote(parsed.path.lstrip("/"))
+    database = parsed.path
+    # Require the exact canonical URI path; libpq and URL parsers can differ
+    # when interpreting repeated slashes or percent-encoded path characters.
     # libpq accepts connection parameters in the URI query string. Reject them
     # so a validated loopback authority cannot be paired with an overriding
     # host/hostaddr/service parameter when the child process opens the URL.
@@ -42,7 +44,7 @@ def validate_database_url(database_url: str) -> tuple[bool, str]:
         return False, "Refusing non-local database host."
     if port != ALLOWED_PORT:
         return False, f"Refusing database port; expected {ALLOWED_PORT}."
-    if database != ALLOWED_DATABASE:
+    if database != f"/{ALLOWED_DATABASE}":
         return False, f"Refusing database name; expected {ALLOWED_DATABASE}."
     return True, "Local Chikoro PostgreSQL target verified."
 
