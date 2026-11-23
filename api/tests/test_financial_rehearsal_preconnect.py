@@ -63,6 +63,27 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
                 assert "pg_class" in db.execute.call_args.args[0]
                 self.assertIn("'S'", db.execute.call_args.args[0], "Sequences must block rehearsal")
 
+    def test_rejects_function_only_public_schema_before_loading_sql(self):
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.execute.return_value.fetchone.side_effect = [(0,), (1,)]
+        connection = MagicMock()
+        connection.__enter__.return_value = db
+
+        with patch.dict("os.environ", {
+            "DATABASE_URL": LOCAL_URL,
+            "CHIKORO_REHEARSAL_EMPTY_DATABASE": "yes",
+        }, clear=True):
+            with patch.object(rehearse_financial_migration.psycopg, "connect", return_value=connection):
+                with patch.object(type(rehearse_financial_migration.SCHEMA), "read_text") as sql_read:
+                    with self.assertRaisesRegex(RuntimeError, "public schema contains functions"):
+                        rehearse_financial_migration.run()
+                    sql_read.assert_not_called()
+        self.assertEqual(db.execute.call_count, 2)
+        self.assertIn("pg_class", db.execute.call_args_list[0].args[0])
+        self.assertIn("pg_proc", db.execute.call_args_list[1].args[0])
+
 
 if __name__ == "__main__":
     unittest.main()
