@@ -64,6 +64,14 @@ def run():
         if public_extensions:
             raise RuntimeError("Refusing rehearsal: public schema contains extensions")
 
+        # User-defined collations are schema objects even without tables or functions.
+        # Ignore built-in collations in pg_catalog by scoping to public.
+        public_collations = db.execute("""SELECT count(*) FROM pg_collation c
+            JOIN pg_namespace n ON n.oid = c.collnamespace
+            WHERE n.nspname = 'public'""").fetchone()[0]
+        if public_collations:
+            raise RuntimeError("Refusing rehearsal: public schema contains collations")
+
         db.execute(SCHEMA.read_text(encoding="utf-8"))
         db.execute("""INSERT INTO schools (id, code, name) VALUES
                       (1, 'S1', 'School One'), (2, 'S2', 'School Two');
