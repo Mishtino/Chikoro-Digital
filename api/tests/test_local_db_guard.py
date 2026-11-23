@@ -62,6 +62,34 @@ class LocalDatabaseGuardTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertFalse(validate_database_url(url)[0])
 
+    def test_rejects_encoded_database_name_or_extra_path(self):
+        for url in (
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local%2Fother",
+            "postgresql://user:pass@127.0.0.1:55432/chikoro_local/other",
+            "postgresql://user:pass@127.0.0.1:55432/%70ostgres",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(validate_database_url(url)[0])
+
+    def test_rejects_additional_libpq_connection_overrides(self):
+        for query in (
+            "host=remote.example.com",
+            "hostaddr=203.0.113.4",
+            "service=production",
+            "port=5432",
+            "dbname=production",
+            "options=-c%20search_path%3Dpublic",
+        ):
+            with self.subTest(query=query):
+                url = "postgresql://user:pass@localhost:55432/chikoro_local?" + query
+                self.assertFalse(validate_database_url(url)[0])
+
+    def test_accepts_postgres_alias_and_localhost(self):
+        ok, reason = validate_database_url(
+            "postgres://user:pass@localhost:55432/chikoro_local"
+        )
+        self.assertTrue(ok, reason)
+
     def test_does_not_launch_command_for_unsafe_database(self):
         with patch.dict("os.environ", {"DATABASE_URL": "postgresql://user:pass@prod.example.com:5432/prod"}):
             with patch.object(local_db_guard.subprocess, "run") as run:
