@@ -337,6 +337,24 @@ def run():
             "Duplicate allocation UPDATE rehearsal left temporary financial records"
         )
 
+        # Payment references are unique PER SCHOOL, not globally. A reference
+        # used by School One must remain valid for School Two.
+        before_tenant_reference = financial_snapshot()
+        db.execute(
+            "INSERT INTO payments (id, school_id, student_id, amount, reference) "
+            "VALUES (33, 2, 3, 5, 'PAY-1')"
+        )
+        other_school_reference = db.execute(
+            "SELECT school_id, reference FROM payments WHERE id = 33"
+        ).fetchone()
+        assert other_school_reference == (2, "PAY-1"), (
+            f"Tenant-scoped payment reference rejected or changed: {other_school_reference}"
+        )
+        db.execute("DELETE FROM payments WHERE id = 33")
+        assert financial_snapshot() == before_tenant_reference, (
+            "Tenant-scoped payment reference rehearsal left financial records"
+        )
+
         # Valid same-school payment corrections must also remain possible.
         # Use a disposable payment so the later RLS fixture remains stable.
         before_payment_reassignment = financial_snapshot()
