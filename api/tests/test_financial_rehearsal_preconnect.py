@@ -63,6 +63,7 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
                 connect.assert_called_once_with(LOCAL_URL, autocommit=True)
                 db.execute.assert_called_once()
                 assert "pg_class" in db.execute.call_args.args[0]
+                self.assertIn("'S'", db.execute.call_args.args[0], "Sequences must block rehearsal")
 
 
 if __name__ == "__main__":
