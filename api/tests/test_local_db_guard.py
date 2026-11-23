@@ -16,13 +16,13 @@ class LocalDatabaseGuardTests(unittest.TestCase):
     def test_rejects_whitespace_and_control_characters_before_url_parsing(self):
         base = "postgresql://user:pass@127.0.0.1:55432/chikoro_local"
         for url in (
-            "\\t" + base,
-            base + "\\n",
-            base.replace("127.0.0.1", "127.0.0.1\\r"),
-            base.replace("55432", "55\\t432"),
-            base + "\\x00",
+            "\t" + base,
+            base + "\n",
+            base.replace("127.0.0.1", "127.0.0.1\r"),
+            base.replace("55432", "55\t432"),
+            base + "\x00",
             base + " ",
-            base + "\\x7f",
+            base + "\x7f",
         ):
             with self.subTest(url=repr(url)):
                 self.assertFalse(validate_database_url(url)[0])
