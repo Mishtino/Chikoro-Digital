@@ -240,16 +240,16 @@ def run():
 
         # Foreign keys must also reject UPDATE-based tenant reassignment, not
         # only invalid new allocations. Preserve the original valid row.
-        update_rejections = (
+        # Baseline single-column FKs may reject missing IDs before the new composite\n        # tenant FKs; assert the existing guard for missing-parent cases.\n        update_rejections = (
             ("payment reassigned across schools", "fk_payment_allocation_payment_school",
              "UPDATE payment_allocations SET payment_id = 2 WHERE id = 10"),
             ("payment moved across schools", "fk_payment_allocation_payment_school",
              "UPDATE payment_allocations SET school_id = 2 WHERE id = 10"),
             ("invoice moved across schools", "fk_payment_allocation_invoice_school",
              "UPDATE payment_allocations SET invoice_id = 3 WHERE id = 10"),
-            ("payment reassigned to missing parent", "fk_payment_allocation_payment_school",
+            ("payment reassigned to missing parent", "payment_allocations_payment_id_fkey",
              "UPDATE payment_allocations SET payment_id = 99999 WHERE id = 10"),
-            ("invoice reassigned to missing parent", "fk_payment_allocation_invoice_school",
+            ("invoice reassigned to missing parent", "payment_allocations_invoice_id_fkey",
              "UPDATE payment_allocations SET invoice_id = 99999 WHERE id = 10"),
         )
         for label, constraint, sql in update_rejections:
