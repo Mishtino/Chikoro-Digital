@@ -105,6 +105,13 @@ class FinancialRehearsalPreconnectTests(unittest.TestCase):
         self.assertEqual(db.execute.call_count, 3)
         self.assertIn("pg_type", db.execute.call_args_list[2].args[0])
         self.assertIn("'e', 'd', 'r', 'm'", db.execute.call_args_list[2].args[0])
+        # Standalone CREATE TYPE ... AS (...) has typtype='c' and a pg_class
+        # row with relkind='c'; ordinary table row types must not count here.
+        type_query = db.execute.call_args_list[2].args[0]
+        self.assertIn("t.typtype = 'c'", type_query)
+        self.assertIn("c.relkind = 'c'", type_query)
+        self.assertIn("EXISTS", type_query)
+        self.assertNotIn("NOT EXISTS", type_query)
 
     def test_rejects_public_extensions_before_loading_sql(self):
         from unittest.mock import MagicMock

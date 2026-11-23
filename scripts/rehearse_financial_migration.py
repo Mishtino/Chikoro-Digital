@@ -49,8 +49,9 @@ def run():
             JOIN pg_namespace n ON n.oid = t.typnamespace
             WHERE n.nspname = 'public'
               AND (t.typtype IN ('e', 'd', 'r', 'm') OR
-                   (t.typtype = 'c' AND NOT EXISTS (
-                       SELECT 1 FROM pg_class c WHERE c.oid = t.typrelid
+                   (t.typtype = 'c' AND EXISTS (
+                       SELECT 1 FROM pg_class c
+                       WHERE c.oid = t.typrelid AND c.relkind = 'c'
                    )))""").fetchone()[0]
         if public_types:
             raise RuntimeError("Refusing rehearsal: public schema contains standalone types")
