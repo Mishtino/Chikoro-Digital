@@ -2,10 +2,16 @@
 
 These tests never connect to PostgreSQL or execute migrations.
 """
+import importlib
+import sys
 import unittest
 from unittest.mock import patch
 
-from scripts import rehearse_financial_migration
+from scripts import local_db_guard
+
+# The CLI script uses a sibling import when invoked as python scripts/...
+with patch.dict(sys.modules, {"local_db_guard": local_db_guard}):
+    rehearse_financial_migration = importlib.import_module("scripts.rehearse_financial_migration")
 
 
 LOCAL_URL = "postgresql://user:pass@127.0.0.1:55432/chikoro_local"
