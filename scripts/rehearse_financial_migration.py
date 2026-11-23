@@ -292,6 +292,22 @@ def run():
                 f"{label}: rejected DELETE changed financial records"
             )
 
+        # A legitimate same-school reassignment must still work. The
+        # isolation constraints must not block valid financial corrections.
+        # Invoice 2 is unallocated after the preflight fixture is removed.
+        before_reassignment = financial_snapshot()
+        db.execute("UPDATE payment_allocations SET invoice_id = 2 WHERE id = 10")
+        reassigned = db.execute(
+            "SELECT school_id, payment_id, invoice_id FROM payment_allocations WHERE id = 10"
+        ).fetchone()
+        assert reassigned == (1, 1, 2), (
+            f"Valid same-school reassignment produced unexpected allocation: {reassigned}"
+        )
+        db.execute("UPDATE payment_allocations SET invoice_id = 1 WHERE id = 10")
+        assert financial_snapshot() == before_reassignment, (
+            "Restoring valid same-school reassignment altered financial records"
+        )
+
         # Uniqueness must hold for UPDATE as well as INSERT. Keep the
         # original rows unchanged after each rejected mutation.
         unique_updates = (
