@@ -15,6 +15,13 @@ import psycopg
 from local_db_guard import validate_database_url
 
 
+def snapshot(db: psycopg.Connection) -> tuple:
+    return tuple(
+        tuple(db.execute(f"SELECT * FROM public.{table} ORDER BY id").fetchall())
+        for table in ("schools", "invoices", "payments", "payment_allocations")
+    )
+
+
 def main() -> None:
     url = os.environ.get("DATABASE_URL", "")
     allowed, reason = validate_database_url(url)
@@ -25,11 +32,8 @@ def main() -> None:
 
     with psycopg.connect(url) as db:
         db.execute("SET TRANSACTION READ ONLY")
-        before = tuple(
-            db.execute(f"SELECT count(*) FROM public.{table}").fetchone()[0]
-            for table in ("schools", "invoices", "payments", "payment_allocations")
-        )
-        if before[0] == 0:
+        before = snapshot(db)
+        if not before[0]:
             raise AssertionError("Expected populated financial rehearsal fixtures")
 
     script = Path(__file__).with_name("rehearse_financial_migration.py")
@@ -46,12 +50,9 @@ def main() -> None:
 
     with psycopg.connect(url) as db:
         db.execute("SET TRANSACTION READ ONLY")
-        after = tuple(
-            db.execute(f"SELECT count(*) FROM public.{table}").fetchone()[0]
-            for table in ("schools", "invoices", "payments", "payment_allocations")
-        )
-    assert after == before, f"Rejected rehearsal changed fixture counts: {before} -> {after}"
-    print("PASS: populated PostgreSQL rehearsal refused; financial fixture counts unchanged")
+        after = snapshot(db)
+    assert after == before, "Rejected rehearsal changed financial fixture rows or values"
+    print("PASS: populated PostgreSQL rehearsal refused; financial fixture rows and values unchanged")
 
 
 if __name__ == "__main__":
