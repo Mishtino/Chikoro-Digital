@@ -15,6 +15,13 @@ import psycopg
 from local_db_guard import validate_database_url
 
 
+def snapshot(db: psycopg.Connection) -> tuple:
+    return tuple(
+        tuple(db.execute(f"SELECT * FROM public.{table} ORDER BY id").fetchall())
+        for table in ("schools", "invoices", "payments", "payment_allocations")
+    )
+
+
 def main() -> None:
     url = os.environ.get("DATABASE_URL", "")
     allowed, reason = validate_database_url(url)
@@ -25,10 +32,7 @@ def main() -> None:
 
     with psycopg.connect(url) as db:
         db.execute("SET TRANSACTION READ ONLY")
-        before = tuple(
-            tuple(db.execute(f"SELECT * FROM public.{table} ORDER BY id").fetchall())
-            for table in ("schools", "invoices", "payments", "payment_allocations")
-        )
+        before = snapshot(db)
         if not before[0]:
             raise AssertionError("Expected populated financial rehearsal fixtures")
 
@@ -46,10 +50,7 @@ def main() -> None:
 
     with psycopg.connect(url) as db:
         db.execute("SET TRANSACTION READ ONLY")
-        after = tuple(
-            db.execute(f"SELECT count(*) FROM public.{table}").fetchone()[0]
-            for table in ("schools", "invoices", "payments", "payment_allocations")
-        )
+        after = snapshot(db)
     assert after == before, "Rejected rehearsal changed financial fixture rows or values"
     print("PASS: populated PostgreSQL rehearsal refused; financial fixture rows and values unchanged")
 
